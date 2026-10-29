@@ -1,5 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
 
-#include "../includes/net_util.h"
+#include "net_util.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -121,6 +122,7 @@ int nu_send_line(int file_descriptor, const char *line)
     return nu_write_all(file_descriptor, "\n", 1);
 }
 
+
 int nu_connect(const char  *host, unsigned short port)
 {
     int file_descriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -149,4 +151,30 @@ int nu_connect(const char  *host, unsigned short port)
 
     return file_descriptor;
 
+}
+
+
+int nu_read_exact(int file_descriptor, void *buffer, size_t size){
+    char *p = buffer;
+    size_t read_bytes = 0;
+
+    while (read_bytes < size){
+        ssize_t  bytes_now = read(file_descriptor, p + read_bytes, size - read_bytes);
+
+        if(bytes_now < 0){
+            if(errno == EINTR)
+                continue;
+            return -1;
+        }
+
+        if(bytes_now == 0){
+            errno = ECONNRESET;
+            return -1;
+        }
+
+        read_bytes += (size_t)bytes_now;
+    }
+
+    return 0;
+    
 }

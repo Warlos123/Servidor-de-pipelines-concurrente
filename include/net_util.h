@@ -15,5 +15,6 @@ int nu_write_all(int file_descriptor, const void *buffer, size_t size);
 ssize_t nu_read_line(int file_descriptor, char *buffer, size_t size);
 int nu_send_line(int file_descriptor, const char *line);
 int nu_connect(const char *host, unsigned short port);
+int nu_read_exact(int file_descriptor, void *buffer, size_t size);
 
 #endif //NET_UTIL_H
