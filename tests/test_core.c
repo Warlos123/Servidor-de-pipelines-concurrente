@@ -1,8 +1,7 @@
-/* Pruebas del núcleo (persona B): estados, condiciones, modelo y DAG.
- * Compilar y correr desde la raíz del repo:
- *   gcc -std=c2x -Wall -Wextra -pedantic -O2 -pthread -fopenmp -Iinclude \
- *       src/core/model.c src/core/state.c src/core/dag.c tests/test_core.c -o test_core && ./test_core
- */
+/* 
+The following block of code was partially made using: 
+Anthropic (2026). Claude(Opus 5.5) https://claude.ai
+*/
 #define _POSIX_C_SOURCE 200809L
 
 #include "dag.h"
