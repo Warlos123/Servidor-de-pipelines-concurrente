@@ -2,14 +2,21 @@
 #define COMMANDS_H
  
 #include "protocol.h"
+#include "scheduler.h"
 #include <stddef.h>
  
 //Executes an already validated command and writes the reply.
 int command_execute(const command_t *command, const char *yaml, size_t yaml_len, char *body, size_t size);
 
+void command_follow(const command_t *command, int file_descriptor);
+
 //Implemented in fdtd_server.c
 //stops accepting connections and starts the shutdown.
 void server_request_shutdown(void);
+
+//Implemented in pipelined.c
+//scheduler shared by all the handlers, used to submit runs.
+scheduler_t *server_scheduler(void);
  
 #endif //COMMANDS_H
  

@@ -1,10 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include "../include/net_util.h"
-#include "../include/protocol.h" 
-#include "../include/commands.h"
-#include "../include/job_table.h"
-#include "../include/dispatcher.h" 
+#include "net_util.h"
+#include "protocol.h" 
+#include "commands.h"
+#include "scheduler.h"
+#include "job_execute.h"
+
 
 #include <errno.h>
 #include <pthread.h>
@@ -15,14 +16,14 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <limits.h>
 
 
 #define DEFAULT_PORT 8080
 #define LISTEN_BACKLOG 64
 
-#ifndef QUEUE_CAPACITY
-#define QUEUE_CAPACITY 4 //C chairs of barbershop
-#endif
+
+#define REPLY_BYTES 2048
 
 #ifndef MAX_ACTIVE_THREADS
 #define MAX_ACTIVE_THREADS 32 //K handlers active 
@@ -32,6 +33,13 @@ static volatile sig_atomic_t g_running = 1;
 static int listen_file_descriptor = -1;
 
 static sem_t g_counting_sem; //counting semaphore | K permissions, used by handlers
+
+static scheduler_t g_scheduler; //global job queue + agents
+
+
+scheduler_t *server_scheduler(void){
+    return &g_scheduler;
+}
 
 typedef struct {
     int file_descriptor;
@@ -83,38 +91,79 @@ static void sem_wait_retry(sem_t *s){
     //sem_wait() sub 1 to the value of the semaphore, if value is 0, thread sleeps.
 }
 
+
+
+static void server_command(int file_descriptor, const command_t *command){
+    char *yaml = NULL;
+
+    //SUBMIT
+    if(command->type == C_SUBMIT){
+        yaml = malloc(command->body_len + 1);
+
+        if(yaml == NULL){
+            (void)protocol_send_response(file_descriptor, 0, "out of memory");
+            return;
+        }
+
+        if(nu_read_exact(file_descriptor, yaml, command->body_len) < 0){
+            (void)protocol_send_response(file_descriptor, 0, "incomplete body");
+            free(yaml);
+            return;
+        }
+
+        yaml[command->body_len] = '\0';
+    }
+
+    //LOGS [FOLLOW]
+    if(command->type == C_LOGS && command->follow){
+        command_follow(command, file_descriptor);
+        return;
+    }
+
+    char *body = malloc(REPLY_BYTES);
+
+    if(body == NULL){
+        (void)protocol_send_response(file_descriptor, 0, "out of memory");
+        free(yaml);
+        return;
+    }
+
+    body[0] = '\0';
+
+    //returns 1 = OK, 0 = ERR
+    int succeeded = command_execute(command, yaml, command->body_len, body, REPLY_BYTES);
+
+    (void)protocol_send_response(file_descriptor, succeeded, body);
+
+    free(body);
+    free(yaml);
+}
+
 static void *handle_connection(void *arg)
 {
     connection_t *conn = arg; //thread
     char line[LINE_MAX_LEN];
 
+    errno = 0;
     ssize_t n = nu_read_line(conn->file_descriptor, line, sizeof line);
 
     if (n > 0){
        command_t command;
 
-        if (protocol_parse(line, &command) < 0) {
-            char reply[LINE_MAX_LEN];
-            snprintf(reply, sizeof reply, "ERROR %s", command.error);
+        if (protocol_parse(line, &command) < 0)
+            (void)protocol_send_response(conn->file_descriptor, 0, command.error);
 
-            (void)nu_send_line(conn->file_descriptor, reply);
-
-        } 
-        
-        else { //EXECUTE COMMAND
-            char reply[LINE_MAX_LEN];
-            command_execute(&command, reply, sizeof reply);
- 
-            (void)nu_send_line(conn->file_descriptor, reply);
-        }
+        //EXECUTE COMMAND
+        else
+            server_command(conn->file_descriptor, &command);
 
     }
 
     else if (n == 0)
-        (void)nu_send_line(conn->file_descriptor, "ERROR empty line");
+        (void)protocol_send_response(conn->file_descriptor, 0, "empty line");
 
     else if (errno == EMSGSIZE)
-        (void)nu_send_line(conn->file_descriptor, "ERROR line too long");
+        (void)protocol_send_response(conn->file_descriptor, 0, "line too long");
     
 
     if (close(conn->file_descriptor) < 0)
@@ -126,61 +175,77 @@ static void *handle_connection(void *arg)
 
 }
 
-static unsigned short parse_port(int argc, char **argv)
+static int parse_int(const char *text, long min, long max, long *out)
 {
-    if (argc < 2)
-    {
-        return DEFAULT_PORT;
-    }
-
     char *end = NULL;
     errno = 0;
-    long value = strtol(argv[1], &end, 10);
+    long value = strtol(text, &end, 10);
 
-    if (errno != 0 || end == argv[1] || *end != '\0' ||
-        value <= 0 || value > 65535) {
-        fprintf(stderr, "invalid port '%s', using %d\n", argv[1], DEFAULT_PORT);
-        return DEFAULT_PORT;
-        }
+    if(errno != 0 || end == text || *end != '\0' || value < min || value > max)
+        return -1;
 
-    return (unsigned short)value;
+    *out = value;
+    return 0;
+}
+
+
+static int parse_args(int argc, char **argv, unsigned short *port, size_t *agents, const char **work_directory)
+{
+    long value_port, value_agents;
+
+    if(argc != 4){
+        fprintf(stderr, "ERROR: <port> <agents> <work directory>");
+        return -1;
+    }
+
+    if(parse_int(argv[1], 1, 65535, &value_port) < 0){
+        fprintf(stderr, "invalid port '%s'\n", argv[1]);
+        return -1;
+    }
+
+    if(parse_int(argv[2], 1, INT_MAX, &value_agents) < 0){
+        fprintf(stderr, "invalid agents '%s'\n", argv[2]);
+        return -1;
+    }
+
+    *port = (unsigned short)value_port;
+    *agents = (size_t)value_agents;
+    *work_directory = argv[3];
+
+    return 0;
 }
 
 int main(int argc, char **argv)
 {
-    if (install_signal_handlers() < 0)
-    {
+
+    unsigned short port;
+    size_t agents;
+    const char *work_directory;
+
+    if(parse_args(argc, argv, &port, &agents, &work_directory) < 0)
         return EXIT_FAILURE;
-    }
+
+    if (install_signal_handlers() < 0)
+        return EXIT_FAILURE;
 
     if (sem_init(&g_counting_sem, 0, MAX_ACTIVE_THREADS) < 0){
         perror("sem_init");
         return EXIT_FAILURE;
     }
 
-    if (job_table_init(QUEUE_CAPACITY) < 0){
-        fprintf(stderr, "could not create the job queue\n");
+    //AGENT POOL: one OpenMP thread per agent.
+    if(scheduler_start(&g_scheduler, agents, execute_job, (void *)work_directory) < 0){
+        fprintf(stderr, "ERROR: can't start scheduler\n");
         sem_destroy(&g_counting_sem);
         return EXIT_FAILURE;
     }
  
 
-    if (dispatcher_start() < 0){
-        fprintf(stderr, "could not start the dispatcher\n");
-        job_table_destroy();
-        sem_destroy(&g_counting_sem);
-        return EXIT_FAILURE;
-    }
-
-
-    unsigned short port = parse_port(argc, argv);
-
     listen_file_descriptor = nu_listen(port, LISTEN_BACKLOG);
 
     if (listen_file_descriptor < 0)
     {
-        dispatcher_stop();
-        job_table_destroy();
+        scheduler_stop(&g_scheduler);
         sem_destroy(&g_counting_sem);
         return EXIT_FAILURE;
     }
@@ -263,13 +328,11 @@ int main(int argc, char **argv)
         perror("close(listen_file_descriptor)");
     }
 
-    for (int i = 0; i < MAX_ACTIVE_THREADS; i++){
+    scheduler_stop(&g_scheduler);
+
+    for(int i = 0; i < MAX_ACTIVE_THREADS; i++){
         sem_wait_retry(&g_counting_sem);
     }
-
-    dispatcher_stop();
-    job_table_destroy();
-
 
     sem_destroy(&g_counting_sem);
 
