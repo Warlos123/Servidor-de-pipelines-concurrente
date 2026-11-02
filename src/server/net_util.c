@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include "../../include/net_util.h"
+#include "net_util.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>

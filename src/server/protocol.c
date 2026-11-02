@@ -1,14 +1,14 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include "../includes/protocol.h"
-#include "../includes/net_util.h"  
+#include "protocol.h"
+#include "net_util.h"  
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 
-#define MAX_WORDS 16
+#define MAX_WORDS 8
 #define SEPARATOR " "
 #define MIN_DIMENSIONS 3
 #define MAX_DIMENSIONS 4096
@@ -37,6 +37,18 @@ static int fail(command_t *command, const char *reason){
     return -1;
 }
 
+//Just checks if an id is not negative.
+static int parse_id(const char *text, unsigned long *id){
+    long value;
+
+    if(parse_long(text, &value) < 0 || value <= 0)
+        return -1;
+
+    *id = (unsigned long)value;
+
+    return 0;
+}
+
 //TURNS A LINE OF TEXT INTO A COMMAND
 int protocol_parse(const char *line, command_t *command){
     memset(command, 0, sizeof *command);
@@ -61,110 +73,151 @@ int protocol_parse(const char *line, command_t *command){
     
 
 
-    //SHUTDOWN 
-    if(strcmp(words[0], "SHUTDOWN") == 0){
+    //SHUTDOWN OR LIST
+    if(strcmp(words[0], "SHUTDOWN") == 0 || strcmp(words[0], "LIST") == 0){
         if(count != 1)
-            return fail(command, "SHUTDOWN takes no arguments");
+            return fail(command, "command takes no arguments");
 
-        command->type = C_SHUTDOWN;
+        command->type = (strcmp(words[0], "SHUTDOWN") == 0) ? C_SHUTDOWN : C_LIST;;
         return 0;
     }
     
 
-    //STATUS OR RESULT
-    if(strcmp(words[0], "STATUS") == 0 || strcmp(words[0], "RESULT") == 0){
-        long id;
+    //STATUS OR CANCEL
+    if(strcmp(words[0], "STATUS") == 0 || strcmp(words[0], "CANCEL") == 0){
 
         if(count != 2)
             return fail(command, "expected 1 argument");
 
-        if(parse_long(words[1], &id) < 0 || id <= 0)
+        if(parse_id(words[1], &command->id) < 0)
             return fail(command, "invalid id");
 
-        command->type = (strcmp(words[0], "STATUS") == 0) ? C_STATUS : C_RESULT;
-
-        command->id = (unsigned long)id;
+        command->type = (strcmp(words[0], "STATUS") == 0) ? C_STATUS : C_CANCEL;
 
         return 0;
     }
 
     
-    //PEEK
-    if(strcmp(words[0], "PEEK") == 0){
-        long id, i, j;
-
-        if(count != 4)
-            return fail(command, "expected 3 arguments");
-
-        if(parse_long(words[1], &id) < 0 || id <= 0)
-            return fail(command, "invalid id");
-
-        if(parse_long(words[2], &i) < 0 || i < 0 || i > INT_MAX)
-            return fail(command, "invalid i");
-
-        if(parse_long(words[3], &j) < 0 || j < 0 || j > INT_MAX)
-            return fail(command, "invalid j");
-
-        command->type = C_PEEK;
-        command->id = (unsigned long)id;
-        command->i = (int)i;
-        command->j = (int)j;
-
-        return 0;
-    }
-
-
     //SUBMIT 
     if(strcmp(words[0], "SUBMIT") == 0){
-        long params_submit[7];
+        long nbytes;
 
-        if(count != 8)
-            return fail(command, "expected 7 arguments");
+        if(count != 2)
+            return fail(command, "expected 1 argument");
 
-        for(int n = 0; n < 7; n++){
-            if(parse_long(words[n + 1], &params_submit[n]) < 0)
-                return fail(command, "invalid number");
-        }
-
-        long nx = params_submit[0];
-        long ny = params_submit[1];
-        long steps = params_submit[2];
-        long threads = params_submit[3];
-        long k = params_submit[4];
-        long sx = params_submit[5];
-        long sy = params_submit[6];      
-        
-        if(nx < MIN_DIMENSIONS || nx > MAX_DIMENSIONS)
-            return fail(command, "nx out of range");
-
-        if(ny < MIN_DIMENSIONS || ny > MAX_DIMENSIONS)
-            return fail(command, "ny out of range");
-
-        if(steps <= 0 || steps > INT_MAX)
-            return fail(command, "invalid steps");
-        
-        if(threads < 1 || threads > nx - 2)
-            return fail(command, "threads out of range");
-
-        if(k < 0 || k > INT_MAX)
-            return fail(command, "invalid k");
-
-        if(sx < 1 || sx > nx - 2 || sy < 1 || sy > ny - 2)
-            return fail(command, "source out of range");
+        if(parse_long(words[1], &nbytes) < 0 || nbytes <= 0 || nbytes > MAX_YAML_BYTES)
+            return fail(command, "invalid yaml size");
 
         command->type = C_SUBMIT;
-        command->params.nx = (int)nx;
-        command->params.ny = (int)ny;
-        command->params.steps = (int)steps;
-        command->params.threads = (int)threads;
-        command->params.k = (int)k;
-        command->params.sx = (int)sx;
-        command->params.sy = (int)sy;
+        command->body_len = (size_t)nbytes;
 
         return 0;
 
     }
+
+
+    //LOGS
+    if(strcmp(words[0], "LOGS") == 0){
+
+        if(count < 2 || count > 4)
+            return fail(command, "expected 1 to 3 arguments");
+        
+        if(parse_id(words[1], &command->id) < 0)
+            return fail(command, "invalid id");
+        
+        int next_word = 2;
+
+        if(next_word < count && strcmp(words[next_word], "FOLLOW") != 0){ //Is not follow, is job
+            if(strlen(words[next_word]) >= JOB_NAME_MAX)
+                return fail(command, "job name too long");
+
+            snprintf(command->job, sizeof command->job, "%s", words[next_word]);
+            next_word++;
+        }
+
+
+        if(next_word < count){//There is still a word left, has to be FOLLOW
+            if(strcmp(words[next_word], "FOLLOW") != 0)
+                return fail(command, "expected FOLLOW");
+
+            command->follow = 1;
+            next_word++;
+        }
+
+        if(next_word != count)
+            return fail(command, "too many arguments");
+
+        command->type = C_LOGS;
+        return 0;
+        
+    }
+
+
 
     return fail(command, "unknown command");
 
+}
+
+
+
+int protocol_send_response(int file_descriptor, int ok, const char *body){
+    size_t len = (body != NULL) ? strlen(body) : 0;
+
+    char header[64];
+
+    snprintf(header, sizeof header, "%s %zu", ok ? "OK" : "ERR", len);
+
+    if(nu_send_line(file_descriptor, header) <0)
+        return -1;
+
+    if(len == 0)
+        return 0;
+
+    return nu_write_all(file_descriptor, body, len);
+}
+
+
+int protocol_read_response(int file_descriptor, int *ok, char **body, size_t *len){
+    
+    char line[LINE_MAX_LEN]; //header
+
+    if(nu_read_line(file_descriptor, line, sizeof line) < 0)
+        return -1;
+
+    char *space = strchr(line, ' ');
+
+    if(space == NULL) //No blank space
+        return -1;
+
+    *space = '\0';
+
+    if(strcmp(line, "OK") == 0)
+        *ok = 1;
+
+    else if(strcmp(line, "ERR") == 0)
+        *ok = 0;
+
+    else 
+        return -1;
+
+    long nbytes;
+
+    if(parse_long(space + 1, &nbytes) < 0 || nbytes < 0 || nbytes > MAX_RESPONSE_BYTES)
+        return -1;
+
+    char *buffer = malloc((size_t)nbytes + 1);
+
+    if(buffer == NULL)
+        return -1;
+
+    if (nbytes > 0 && nu_read_exact(file_descriptor, buffer, (size_t)nbytes) < 0){
+        free(buffer);
+        return -1;
+    }
+
+    buffer[nbytes] = '\0';
+
+    *body = buffer;
+    *len = (size_t)nbytes;
+    return 0;
 }
