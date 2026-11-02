@@ -51,3 +51,12 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
         return 0;
     }
 }
+
+
+//LOGS [FOLLOW]
+void command_follow(const command_t *command, int file_descriptor){
+
+    (void)command;
+
+    (void)protocol_send_response(file_descriptor, 0, "NOT IMPLEMENTED");
+}
