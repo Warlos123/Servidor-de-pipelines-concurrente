@@ -36,9 +36,15 @@ static sem_t g_counting_sem; //counting semaphore | K permissions, used by handl
 
 static scheduler_t g_scheduler; //global job queue + agents
 
+static registry_t g_registry; //every run the server knows
+
 
 scheduler_t *server_scheduler(void){
     return &g_scheduler;
+}
+
+registry_t *server_registry(void){
+    return &g_registry;
 }
 
 typedef struct {
@@ -233,9 +239,16 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    if(registry_init(&g_registry) < 0){
+        fprintf(stderr, "ERROR: can't create the registry\n");
+        sem_destroy(&g_counting_sem);
+        return EXIT_FAILURE;
+    }
+
     //AGENT POOL: one OpenMP thread per agent.
     if(scheduler_start(&g_scheduler, agents, execute_job, (void *)work_directory) < 0){
         fprintf(stderr, "ERROR: can't start scheduler\n");
+        registry_destroy(&g_registry);
         sem_destroy(&g_counting_sem);
         return EXIT_FAILURE;
     }
@@ -246,6 +259,7 @@ int main(int argc, char **argv)
     if (listen_file_descriptor < 0)
     {
         scheduler_stop(&g_scheduler);
+        registry_destroy(&g_registry);
         sem_destroy(&g_counting_sem);
         return EXIT_FAILURE;
     }
@@ -328,11 +342,14 @@ int main(int argc, char **argv)
         perror("close(listen_file_descriptor)");
     }
 
-    scheduler_stop(&g_scheduler);
-
+    //wait for every handler first: a handler may still submit to the scheduler
     for(int i = 0; i < MAX_ACTIVE_THREADS; i++){
         sem_wait_retry(&g_counting_sem);
     }
+
+    //agents hold run pointers until they stop, so the registry goes last
+    scheduler_stop(&g_scheduler);
+    registry_destroy(&g_registry);
 
     sem_destroy(&g_counting_sem);
 
