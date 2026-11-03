@@ -16,7 +16,6 @@ void error_list_add(error_list_t *errors, const char *format, ...);
 void error_list_free(error_list_t *errors);
 
 //Reads yaml_len bytes of YAML and builds a pipeline_t
-//Returns NULL and adds to errors if it can't be read.
 pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t *errors);
 
 
