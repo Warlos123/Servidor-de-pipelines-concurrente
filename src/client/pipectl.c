@@ -1,5 +1,8 @@
+#define _POSIX_C_SOURCE 200809L
 
-#include "../include/net_util.h"
+#include "net_util.h"
+#include "protocol.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,7 +10,7 @@
 #include <unistd.h>
 
 
-//./fdtd_client <host> <port> <command...>
+//pipectl <host> <port> <command...> [arguments]
 
 
 int main(int argc, char **argv) 
@@ -35,48 +38,80 @@ int main(int argc, char **argv)
     }
 
 
+    //SUBMIT (file path)
+    int submit = strcmp(argv[3], "SUBMIT") == 0;
+
+    if(submit && argc != 5){
+        fprintf(stderr, "usage: %s <host> <port> SUBMIT <file.yaml>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+  
     char request[LINE_MAX_LEN];
     size_t used = 0;
     request[0] = '\0';
 
+    if(!submit){
+        for (int i = 3; i < argc; ++i){
 
-    for (int i = 3; i < argc; ++i){
-
-        //use snprintf to send request text to socket.
-                         //writes in       //available storage          //if(i>3)->blank space
-        int w = snprintf(request + used, sizeof request - used, "%s%s", (i > 3) ? " " : "", argv[i]);
+            //use snprintf to send request text to socket.
+                            //writes in       //available storage          //if(i>3)->blank space
+            int w = snprintf(request + used, sizeof request - used, "%s%s", (i > 3) ? " " : "", argv[i]);
 
 
-        if (w < 0 || (size_t)w >= sizeof request - used){
-            fprintf(stderr, "command too long\n");
-            return EXIT_FAILURE;
+            if (w < 0 || (size_t)w >= sizeof request - used){
+                fprintf(stderr, "command too long\n");
+                return EXIT_FAILURE;
+            }
+
+
+            used += (size_t)w;
         }
-
-
-        used += (size_t)w;
     }
 
 
+
+    //LOGS FOLLOW 
+    int follow = strcmp(argv[argc - 1], "FOLLOW") == 0;
+    
     int file_descriptor = nu_connect(argv[1], (unsigned short)port);
 
     if (file_descriptor < 0)
         return EXIT_FAILURE;
 
-    if (nu_send_line(file_descriptor, request) < 0){
+
+    int sent;
+
+    if(submit)
+        sent = protocol_send_submit(file_descriptor, argv[4]);
+
+    else
+        sent = nu_send_line(file_descriptor, request);
+
+    if(sent < 0){
         close(file_descriptor);
         return EXIT_FAILURE;
     }
-    
 
-    char response[LINE_MAX_LEN];
-    ssize_t n = nu_read_line(file_descriptor, response, sizeof response);
+
+    int result;
+    size_t len;
+
+    do{
+        result = protocol_print_response(file_descriptor, &len);
+    } while (follow && result == 1 && len > 0); //Always reads a response, even if its not follow. If its follow send until OK 0, ERR or connection closed.
+
+
     close(file_descriptor);
 
-    if (n < 0){
+    if(result < 0){
         fprintf(stderr, "no response from server\n");
         return EXIT_FAILURE;
     }
 
-    printf("%s\n", response);
+    if(result == 0)
+        return EXIT_FAILURE;
+
+
     return EXIT_SUCCESS;
 }

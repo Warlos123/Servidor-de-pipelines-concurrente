@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+//For reading file
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define MAX_WORDS 8
 #define SEPARATOR " "
@@ -220,4 +224,85 @@ int protocol_read_response(int file_descriptor, int *ok, char **body, size_t *le
     *body = buffer;
     *len = (size_t)nbytes;
     return 0;
+}
+
+
+
+/* 
+The following block of code was partially made using: 
+Anthropic (2026). Claude(Opus 5.5) https://claude.ai
+*/
+
+//CLIENT METHODS
+int protocol_send_submit(int file_descriptor, const char *path){
+    int file = open(path, O_RDONLY);
+
+    if(file < 0){
+        perror(path);
+        return -1;
+    }
+
+    struct stat info;
+    
+    //fstat gives file size
+    if(fstat(file, &info) < 0){
+        perror(path);
+        close(file);
+        return -1;
+    }
+
+    size_t size = (size_t)info.st_size;
+
+    char *data = malloc(size + 1);
+
+    if(data == NULL){
+        fprintf(stderr, "out of memory");
+        close(file);
+        return -1;
+    }
+
+    if(nu_read_exact(file, data, size) < 0){
+        perror(path);
+        free(data);
+        close(file);
+        return -1;
+    }
+
+    close(file);
+
+    char line[LINE_MAX_LEN];
+    snprintf(line, sizeof line, "SUBMIT %zu", size);
+
+    int result = 0;
+
+    if(nu_send_line(file_descriptor, line) < 0 || nu_write_all(file_descriptor, data, size) < 0 )
+        result = -1;
+
+
+    free(data);
+    return result;
+}
+
+int protocol_print_response(int file_descriptor, size_t *len){
+    int ok;
+    char *body;
+
+    if(protocol_read_response(file_descriptor, &ok, &body, len) < 0)
+        return -1;
+
+    FILE *out = stdout;
+
+    if(!ok)
+        out = stderr;
+
+    fwrite(body, 1, *len, out);
+
+    if(*len > 0 && body[*len -1] != '\n')
+        fputc('\n', out);
+
+    fflush(out);
+
+    free(body);
+    return ok;
+    
 }
