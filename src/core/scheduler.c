@@ -25,7 +25,7 @@ static bool should_run(run_t *run, size_t job)
     }
     omp_unset_lock(&run->lock);
 
-    return condition_met(j->def->condition, deps_status, j->n_deps);
+    return condition_met(run->pipeline->stages[j->stage].condition, deps_status, j->n_deps);
 }
 
 static void finish_job(scheduler_t *scheduler, run_t *run, size_t job, status_t final)

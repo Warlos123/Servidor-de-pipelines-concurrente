@@ -1,7 +1,7 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
-#include "jobqueue.h"
+#include "job_queue.h"
 #include "model.h"
 
 #include <pthread.h>

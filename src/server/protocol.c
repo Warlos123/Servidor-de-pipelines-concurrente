@@ -245,7 +245,7 @@ int protocol_send_submit(int file_descriptor, const char *path){
     struct stat info;
     
     //fstat gives file size
-    if(stat(file, &info) < 0){
+    if(fstat(file, &info) < 0){
         perror(path);
         close(file);
         return -1;
