@@ -80,7 +80,7 @@ pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t 
 
     //if the root is not a map, then its not a pipeline
     else if(root->type != YAML_MAPPING_NODE)
-        error_list_add(errors, "line %d : the pipeline must be a map with 'stages'", (int)root->start_mark.line + 1);
+        error_list_add(errors, "line %d: the pipeline must be a map with 'stages'", (int)root->start_mark.line + 1);
 
     //valid pipeline
     else{
@@ -88,7 +88,7 @@ pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t 
         pipeline = calloc(1, sizeof *pipeline);
 
         if(pipeline == NULL)
-            error_list_add(errors, "out of memoery while reading YAML");
+            error_list_add(errors, "out of memory while reading YAML");
 
         //NEED TO IMPLEMENT FILL THE PIPELINE 
     }
