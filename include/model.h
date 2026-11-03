@@ -57,6 +57,7 @@ typedef struct {
     char **depends_on;      // Worker's names in the same stage 
     size_t n_depends_on;
     bool has_depends_on;    // flase = dependsOn wasnt writen on; true n = 0 = empty list
+    condition_t condition;
     int timeout_seconds;    // 0 = no limit
     step_def_t *steps;
     size_t n_steps;
@@ -141,4 +142,4 @@ size_t run_find_stage(const run_t *run, const char *stage_name);
 
 size_t run_find_job(const run_t *run, size_t stage, const char *job_name);
 
-#endif 
+#endif
