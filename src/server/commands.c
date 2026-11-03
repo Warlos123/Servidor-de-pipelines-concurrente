@@ -4,6 +4,49 @@
 #include <stdio.h>
 
 
+
+//Each helper returns 1 = OK, 0 = ERR, like command_execute.
+static int command_status(const command_t *command, char *body, size_t size){
+    int result = registry_status(server_registry(), (uint64_t)command->id, body, size);
+ 
+    if(result == REG_NOT_FOUND){
+        snprintf(body, size, "run %lu not found", command->id);
+        return 0;
+    }
+ 
+    return 1;
+}
+ 
+static int command_list(char *body, size_t size){
+    if(registry_list(server_registry(), body, size) < 0){
+        snprintf(body, size, "out of memory");
+        return 0;
+    }
+ 
+    if(body[0] == '\0')
+        snprintf(body, size, "no runs");
+ 
+    return 1;
+}
+ 
+static int command_cancel(const command_t *command, char *body, size_t size){
+    int result = registry_cancel(server_registry(), (uint64_t)command->id);
+ 
+    if(result == REG_NOT_FOUND){
+        snprintf(body, size, "run %lu not found", command->id);
+        return 0;
+    }
+ 
+    if(result == REG_FINISHED){
+        snprintf(body, size, "run %lu already finished", command->id);
+        return 0;
+    }
+ 
+    snprintf(body, size, "run %lu canceling", command->id);
+    return 1;
+}
+ 
+
 int command_execute(const command_t *command, const char *yaml, size_t yaml_len, char *body, size_t size){
 
     //THIS IS VOID FOR NOW. NEED TO IMPLEMENT FUNCTIONALITY
