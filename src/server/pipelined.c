@@ -381,13 +381,15 @@ int main(int argc, char **argv)
         sem_wait_retry(&g_counting_sem);
     }
 
-    //agents hold run pointers until they stop, so the registry goes last
+
+    size_t canceled = registry_cancel_all(&g_registry);
+
     scheduler_stop(&g_scheduler);
     registry_destroy(&g_registry);
 
     sem_destroy(&g_counting_sem);
 
-    printf("server stopped (%lu connections accepted)\n", accepted);
+    printf("server stopped (%lu connections accepted, %zu runs canceled)\n", accepted, canceled);
 
     return EXIT_SUCCESS;
 }
