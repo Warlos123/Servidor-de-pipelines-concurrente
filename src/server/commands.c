@@ -30,6 +30,14 @@ static void write_errors(const error_list_t *errors, char *body, size_t size){
 }
 
 static int command_submit(const char *yaml, size_t yaml_len, char *body, size_t size){
+
+    //no new runs once the shutdown started.
+    if(!server_is_running()){
+        snprintf(body, size, "server is shutting down");
+        return 0;
+    }
+
+
     error_list_t errors = {0};
     pipeline_t *pipeline = yaml_parse_pipeline(yaml, yaml_len, &errors);
 
