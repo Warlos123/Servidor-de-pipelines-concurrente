@@ -19,9 +19,9 @@ void server_request_shutdown(void);
 //scheduler shared by all the handlers, used to submit runs.
 scheduler_t *server_scheduler(void);
 
-//Implemented in pipeline.c 
+//Implemented in pipelined.c
 //registry of every run, shared by all the handlers
-register_t *server_registry(void);
+registry_t *server_registry(void);
  
 #endif //COMMANDS_H
  
