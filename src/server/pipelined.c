@@ -23,7 +23,7 @@
 #define LISTEN_BACKLOG 64
 
 
-#define REPLY_BYTES 2048
+#define REPLY_BYTES 2048 //first size of the reply buffer; it doubles while the reply doesn't fit
 
 #ifndef MAX_ACTIVE_THREADS
 #define MAX_ACTIVE_THREADS 32 //K handlers active 
@@ -126,18 +126,34 @@ static void server_command(int file_descriptor, const command_t *command){
         return;
     }
 
-    char *body = malloc(REPLY_BYTES);
+    char *body = NULL;
+    size_t size = REPLY_BYTES;
+    int succeeded = 0;
 
-    if(body == NULL){
-        (void)protocol_send_response(file_descriptor, 0, "out of memory");
-        free(yaml);
-        return;
+    //A reply that fills the buffer was probably cut: run the command again with twice the space.
+    //Safe because only STATUS, LIST and a rejected SUBMIT can be long, and none changes anything.
+    while(1){
+        char *bigger = realloc(body, size);
+
+        if(bigger == NULL){
+            (void)protocol_send_response(file_descriptor, 0, "out of memory");
+            free(body);
+            free(yaml);
+            return;
+        }
+
+        body = bigger;
+        body[0] = '\0';
+
+        //returns 1 = OK, 0 = ERR
+        succeeded = command_execute(command, yaml, command->body_len, body, size);
+
+        //It fit (it didn't reach the last byte), or it can't grow anymore.
+        if(strlen(body) < size - 1 || size >= MAX_RESPONSE_BYTES)
+            break;
+
+        size *= 2;
     }
-
-    body[0] = '\0';
-
-    //returns 1 = OK, 0 = ERR
-    int succeeded = command_execute(command, yaml, command->body_len, body, REPLY_BYTES);
 
     (void)protocol_send_response(file_descriptor, succeeded, body);
 
