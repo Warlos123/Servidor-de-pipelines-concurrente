@@ -66,27 +66,25 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
     
     //STATUS 
     case C_STATUS:
-        printf("NOT IMPLEMENTED");
-        return 1;
+        return command_status(command, body, size);
 
     //LOGS
     case C_LOGS:
-        printf("NOT IMPLEMENTED");
+        snprintf(body, size, "use --follow for streaming logs");
         return 1;
 
     //CANCEL
     case C_CANCEL:
-        printf("NOT IMPLEMENTED");
-        return 1;
+        return command_cancel(command, body, size);
     
     //LIST
     case C_LIST:
-        printf("NOT IMPLEMENTED");
-        return 1;
+        return command_list(body, size);
 
     //SHUTDOWN
     case C_SHUTDOWN:
-        printf("NOT IMPLEMENTED");
+        server_request_shutdown();
+        snprintf(body, size, "shutting down");
         return 1;
 
     default:
