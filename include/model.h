@@ -86,6 +86,17 @@ typedef struct {
 
 
 typedef struct {
+    char  *key;
+    char  *value;
+} var_entry_t;
+
+typedef struct {
+    var_entry_t *entries;
+    size_t       count;
+    size_t       capacity;
+} var_map_t;
+
+typedef struct {
     status_t status;            
     struct timespec start;      
     struct timespec end;        
@@ -106,6 +117,7 @@ typedef struct {
     struct timespec end;        
     step_rt_t *steps;         
     job_log_t log;  
+    var_map_t vars;             // variables the job exported; written before it finishes
 } job_rt_t;
 
 typedef struct {
