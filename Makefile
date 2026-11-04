@@ -8,11 +8,12 @@ CFLAGS += -DSIN_PROTECCION
 endif
 
 OBJS_CORE   = $(BUILD)/model.o $(BUILD)/state.o $(BUILD)/dag.o \
-              $(BUILD)/job_queue.o $(BUILD)/scheduler.o $(BUILD)/registry.o
+              $(BUILD)/job_queue.o $(BUILD)/scheduler.o $(BUILD)/registry.o \
+              $(BUILD)/logstore.o
 OBJS_NET    = $(BUILD)/net_util.o $(BUILD)/protocol.o
 OBJS_SERVER = $(BUILD)/commands.o $(BUILD)/pipelined.o
 OBJS_YAML   = $(BUILD)/yaml_parser.o $(BUILD)/validator.o
-OBJS_EXEC   = $(BUILD)/exec_job_execute.o $(BUILD)/logstore.o $(BUILD)/artifacts.o
+OBJS_EXEC   = $(BUILD)/exec_job_execute.o $(BUILD)/artifacts.o
 OBJS_TASKS  = $(BUILD)/task_sleep_cpu.o $(BUILD)/task_data.o
 
 ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \

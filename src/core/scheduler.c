@@ -38,6 +38,8 @@ static void finish_job(scheduler_t *scheduler, run_t *run, size_t job, status_t 
     }
     omp_unset_lock(&run->lock);
 
+    log_close(&run->jobs[job].log);
+
     size_t n_dependents = run->jobs[job].n_dependents;
     size_t *ready = malloc((n_dependents + 1) * sizeof *ready);
     if (ready == NULL) {

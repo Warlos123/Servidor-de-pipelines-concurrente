@@ -26,4 +26,8 @@ int registry_list(registry_t *registry, char *out, size_t size);
 
 int registry_cancel(registry_t *registry, uint64_t run_id);
 
+run_t *registry_find(registry_t *registry, uint64_t run_id);
+
+void registry_close_logs(registry_t *registry);
+
 #endif

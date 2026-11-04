@@ -55,6 +55,11 @@ run_t *run_create(uint64_t id, pipeline_t *pipeline)
             if (job->steps == NULL && job->def->n_steps > 0) {
                 return run_create_fail(run);
             }
+
+            if (log_init(&job->log) < 0) {
+                return run_create_fail(run);
+            }
+
             g++;
         }
     }
@@ -76,6 +81,7 @@ void run_destroy(run_t *run)
         free(run->jobs[i].deps);
         free(run->jobs[i].dependents);
         free(run->jobs[i].steps);
+        log_destroy(&run->jobs[i].log);
     }
 
     free(run->jobs);

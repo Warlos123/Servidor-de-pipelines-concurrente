@@ -268,3 +268,23 @@ int registry_cancel(registry_t *registry, uint64_t run_id){
     atomic_store(&run->cancel_requested, true);
     return 0;
 }
+
+
+run_t *registry_find(registry_t *registry, uint64_t run_id){
+    return find_run(registry, run_id);
+}
+
+
+void registry_close_logs(registry_t *registry){
+    omp_set_lock(&registry->lock);
+
+    for (size_t i = 0; i < registry->count; i++) {
+        run_t *run = registry->runs[i];
+
+        for (size_t g = 0; g < run->n_jobs; g++) {
+            log_close(&run->jobs[g].log);
+        }
+    }
+
+    omp_unset_lock(&registry->lock);
+}

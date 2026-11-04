@@ -565,19 +565,13 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
     ctx.cancel_flag    = &run->cancel_requested;
     ctx.timeout_seconds = job_def->timeout_seconds;
 
-    /* Allocate log */
-    job_log_t *log = malloc(sizeof *log);
-    if (log == NULL || log_init(log) < 0) {
-        free(log);
-        return ST_FAILED;
-    }
+    /* The log belongs to the run */
+    job_log_t *log = &run->jobs[job_idx].log;
     ctx.log = log;
 
     /* Create workspace */
     ctx.workspace = make_workspace(workdir, run->id, job_idx);
     if (ctx.workspace == NULL) {
-        log_destroy(log);
-        free(log);
         return ST_FAILED;
     }
 
@@ -592,8 +586,6 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
     if (artifact_store_init(&arts, workdir, run->id) < 0) {
         var_map_destroy(&ctx.vars);
         free(ctx.workspace);
-        log_destroy(log);
-        free(log);
         return ST_FAILED;
     }
 
@@ -643,15 +635,6 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
 
     /* ---- Cleanup ---- */
     log_close(log);
-    /*
-     * NOTE: The log is NOT freed here because the --follow handler may still
-     * be reading from it.  Proper lifecycle management requires storing the
-     * log pointer in job_rt_t (needs coordination with Persona B).
-     * For now we leak the log memory on shutdown (acceptable for a prototype).
-     * TODO: add job_log_t *log to job_rt_t in model.h and free it in
-     * run_destroy().
-     */
-
     artifact_store_destroy(&arts);
     var_map_destroy(&ctx.vars);
     free(ctx.workspace);
