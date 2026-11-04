@@ -25,8 +25,8 @@ $(BIN)/pipectl: $(BUILD)/pipectl.o $(OBJS_NET) | $(BIN)
 $(BIN)/test_core: $(BUILD)/test_core.o $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/test_parser: $(BUILD)/test_parser.o $(BUILD)/yaml_parser.o $(OBJS_CORE) | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^ -lyaml 
+$(BIN)/test_parser: $(BUILD)/test_parser.o $(BUILD)/yaml_parser.o $(BUILD)/validator.o $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
 
 test: all
 	@echo "Ejecutando suite de pruebas local..."
