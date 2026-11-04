@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <semaphore.h>
 #include <limits.h>
+#include <sys/time.h>
 
 
 #define DEFAULT_PORT 8080
@@ -24,6 +25,8 @@
 
 
 #define REPLY_BYTES 2048 //first size of the reply buffer; it doubles while the reply doesn't fit
+
+#define READ_TIMEOUT_SECONDS 5 
 
 #ifndef MAX_ACTIVE_THREADS
 #define MAX_ACTIVE_THREADS 32 //K handlers active 
@@ -56,6 +59,10 @@ static void on_sigint(int signum)
 {
     (void)signum;
     g_running = 0;
+}
+
+int server_is_running(void){
+    return g_running;
 }
 
 void server_request_shutdown(void){
@@ -148,7 +155,7 @@ static void server_command(int file_descriptor, const command_t *command){
         //returns 1 = OK, 0 = ERR
         succeeded = command_execute(command, yaml, command->body_len, body, size);
 
-        //It fit (it didn't reach the last byte), or it can't grow anymore.
+        //It fit
         if(strlen(body) < size - 1 || size >= MAX_RESPONSE_BYTES)
             break;
 
@@ -165,6 +172,10 @@ static void *handle_connection(void *arg)
 {
     connection_t *conn = arg; //thread
     char line[LINE_MAX_LEN];
+
+    //A client that connects and sends nothing can't keep this handler blocked forever
+    struct timeval timeout = {READ_TIMEOUT_SECONDS, 0};
+    (void)setsockopt(conn->file_descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
 
     errno = 0;
     ssize_t n = nu_read_line(conn->file_descriptor, line, sizeof line);
@@ -188,6 +199,10 @@ static void *handle_connection(void *arg)
         (void)protocol_send_response(conn->file_descriptor, 0, "line too long");
     
 
+    else if (errno == EAGAIN || errno == EWOULDBLOCK)
+        (void)protocol_send_response(conn->file_descriptor, 0, "timed out waiting for the request");
+
+        
     if (close(conn->file_descriptor) < 0)
         perror("close(file_descriptor)");
 

@@ -44,6 +44,11 @@ registry_t *server_registry(void){
 void server_request_shutdown(void){
 }
 
+//The tests never shut the server down.
+int server_is_running(void){
+    return 1;
+}
+
 static void sleep_ms(long ms){
     struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
     nanosleep(&ts, NULL);
