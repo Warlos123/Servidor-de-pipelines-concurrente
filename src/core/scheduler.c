@@ -14,18 +14,33 @@ static void track_start(scheduler_t *scheduler)
     }
 }
 
-static bool should_run(run_t *run, size_t job)
-{
+static bool should_run(run_t *run, size_t job){
     job_rt_t *j = &run->jobs[job];
-    status_t deps_status[j->n_deps + 1];
+    status_t stage_deps[j->n_deps + 1];
+    status_t job_deps[j->n_deps + 1];
+    size_t n_stage = 0;
+    size_t n_job = 0;
 
     omp_set_lock(&run->lock);
-    for (size_t i = 0; i < j->n_deps; i++) {
-        deps_status[i] = run->jobs[j->deps[i]].status;
+    for(size_t i = 0; i < j->n_deps; i++){
+        const job_rt_t *dep = &run->jobs[j->deps[i]];
+        if(dep->stage == j->stage){
+            job_deps[n_job] = dep->status;
+            n_job++;
+        } else {
+            stage_deps[n_stage] = dep->status;
+            n_stage++;
+        }
     }
     omp_unset_lock(&run->lock);
 
-    return condition_met(run->pipeline->stages[j->stage].condition, deps_status, j->n_deps);
+    if(!condition_met(run->pipeline->stages[j->stage].condition, stage_deps, n_stage)){
+        return false;
+    }
+    if(n_job == 0){
+        return condition_met(j->def->condition, stage_deps, n_stage);
+    }
+    return condition_met(j->def->condition, job_deps, n_job);
 }
 
 static void finish_job(scheduler_t *scheduler, run_t *run, size_t job, status_t final)
