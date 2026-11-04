@@ -1,11 +1,63 @@
 #define _POSIX_C_SOURCE 200809L
  
 #include "commands.h"
+#include "validator.h"
+#include "yaml_parser.h"
+
+#include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 
 
 
 //Each helper returns 1 = OK, 0 = ERR, like command_execute.
+
+//Writes every error, one per line, so the client sees them all at once.
+static void write_errors(const error_list_t *errors, char *body, size_t size){
+    size_t used = 0;
+    body[0] = '\0';
+
+    for(size_t i = 0; i < errors->count && used < size; i++){
+        int written = snprintf(body + used, size - used, "%s\n", errors->items[i]);
+
+        if(written < 0)
+            break;
+
+        used += (size_t)written;
+    }
+}
+
+static int command_submit(const char *yaml, size_t yaml_len, char *body, size_t size){
+    error_list_t errors = {0};
+    pipeline_t *pipeline = yaml_parse_pipeline(yaml, yaml_len, &errors);
+
+    if(pipeline != NULL)
+        validate_pipeline(pipeline, &errors);
+
+    if(pipeline == NULL || errors.count > 0){
+        if(errors.count == 0)
+            snprintf(body, size, "invalid pipeline");
+        else
+            write_errors(&errors, body, size);
+
+        pipeline_free(pipeline);
+        error_list_free(&errors);
+        return 0;
+    }
+
+    error_list_free(&errors);
+
+    uint64_t run_id = 0;
+
+    if(registry_submit(server_registry(), server_scheduler(), pipeline, &run_id) < 0){
+        pipeline_free(pipeline);
+        snprintf(body, size, "could not create the run");
+        return 0;
+    }
+
+    snprintf(body, size, "%" PRIu64, run_id);
+    return 1;
+}
 static int command_status(const command_t *command, char *body, size_t size){
     int result = registry_status(server_registry(), (uint64_t)command->id, body, size);
  
@@ -49,10 +101,6 @@ static int command_cancel(const command_t *command, char *body, size_t size){
 
 int command_execute(const command_t *command, const char *yaml, size_t yaml_len, char *body, size_t size){
 
-    //THIS IS VOID FOR NOW. NEED TO IMPLEMENT FUNCTIONALITY
-    //avoids compilation warnings
-    (void) yaml;
-    (void) yaml_len;
 
 
     //ALL CASES ARE NOT IMPLEMENTED YET, NEED TO CHANGE
@@ -60,9 +108,8 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
     {
 
     //SUBMIT
-    case C_SUBMIT: 
-        printf("NOT IMPLEMENTED");
-        return 1;
+    case C_SUBMIT:
+        return command_submit(yaml, yaml_len, body, size);
     
     //STATUS 
     case C_STATUS:

@@ -11,6 +11,7 @@ OBJS_CORE   = $(BUILD)/model.o $(BUILD)/state.o $(BUILD)/dag.o \
               $(BUILD)/job_queue.o $(BUILD)/scheduler.o $(BUILD)/registry.o
 OBJS_NET    = $(BUILD)/net_util.o $(BUILD)/protocol.o
 OBJS_SERVER = $(BUILD)/commands.o $(BUILD)/pipelined.o
+OBJS_YAML   = $(BUILD)/yaml_parser.o $(BUILD)/validator.o
 OBJS_EXEC   = $(BUILD)/exec_job_execute.o $(BUILD)/logstore.o $(BUILD)/artifacts.o
 OBJS_TASKS  = $(BUILD)/task_sleep_cpu.o $(BUILD)/task_data.o
 
@@ -21,8 +22,8 @@ $(BIN)/test_commands $(BIN)/test_parser
 all: $(ALL_BINS)
 
 $(BIN)/pipelined: $(BUILD)/pipelined.o $(OBJS_NET) $(OBJS_CORE) \
-                  $(OBJS_EXEC) $(OBJS_TASKS) $(BUILD)/commands.o | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^
+                  $(OBJS_EXEC) $(OBJS_TASKS) $(OBJS_YAML) $(BUILD)/commands.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
 
 $(BIN)/pipectl: $(BUILD)/pipectl.o $(OBJS_NET) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
@@ -33,10 +34,10 @@ $(BIN)/test_core: $(BUILD)/test_core.o $(OBJS_CORE) | $(BIN)
 $(BIN)/test_scheduler: $(BUILD)/test_scheduler.o $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/test_commands: $(BUILD)/test_commands.o $(BUILD)/commands.o $(OBJS_NET) $(OBJS_CORE) | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^
+$(BIN)/test_commands: $(BUILD)/test_commands.o $(BUILD)/commands.o $(OBJS_YAML) $(OBJS_NET) $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
 
-$(BIN)/test_parser: $(BUILD)/test_parser.o $(BUILD)/yaml_parser.o $(BUILD)/validator.o $(OBJS_CORE) | $(BIN)
+$(BIN)/test_parser: $(BUILD)/test_parser.o $(OBJS_YAML) $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ -lyaml
 
 $(BIN)/test_registry: $(BUILD)/test_registry.o $(OBJS_CORE) | $(BIN)
