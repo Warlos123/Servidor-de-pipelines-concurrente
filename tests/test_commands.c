@@ -95,6 +95,15 @@ static int run_command(c_type_t type, unsigned long id, char *body){
     return command_execute(&command, NULL, 0, body, BODY_BYTES);
 }
 
+static int run_yaml(const char *yaml, char *body){
+    command_t command;
+    memset(&command, 0, sizeof command);
+    command.type = C_SUBMIT;
+    command.body_len = strlen(yaml);
+    body[0] = '\0';
+    return command_execute(&command, yaml, strlen(yaml), body, BODY_BYTES);
+}
+
 int main(void){
     char body[BODY_BYTES];
 
@@ -136,6 +145,40 @@ int main(void){
 
     CHECK(run_command(C_CANCEL, first, body) == 0);
     CHECK(strstr(body, "already finished") != NULL);
+
+    printf("submit\n");
+    const char *valid =
+        "name: from-yaml\n"
+        "stages:\n"
+        "- stage: Build\n"
+        "  jobs:\n"
+        "  - job: compile\n"
+        "    steps:\n"
+        "    - script: make\n";
+    CHECK(run_yaml(valid, body) == 1);
+    CHECK(strcmp(body, "3") == 0);
+
+    const char *invalid =
+        "stages:\n"
+        "- stage: build\n"
+        "  displayName: Build\n"
+        "  jobs: [{job: a, steps: [{script: x}]}]\n"
+        "- stage: build\n"
+        "  jobs: [{job: b, steps: [{script: x}]}]\n";
+    CHECK(run_yaml(invalid, body) == 0);
+    CHECK(strstr(body, "displayName") != NULL);
+    CHECK(strchr(body, '\n') != strrchr(body, '\n'));
+    CHECK(g_registry.count == 3);
+
+    CHECK(run_yaml("not: [valid", body) == 0);
+    CHECK(body[0] != '\0');
+    CHECK(g_registry.count == 3);
+
+    if(g_registry.count == 3){
+        CHECK(wait_finished(g_registry.runs[2]));
+    }
+    CHECK(run_command(C_STATUS, 3, body) == 1);
+    CHECK(strstr(body, "\"from-yaml\" succeeded") != NULL);
 
     scheduler_stop(&g_scheduler);
     registry_destroy(&g_registry);
