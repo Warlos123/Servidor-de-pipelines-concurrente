@@ -12,6 +12,7 @@ OBJS_NET    = $(BUILD)/net_util.o $(BUILD)/protocol.o
 OBJS_SERVER = $(BUILD)/commands.o $(BUILD)/job_execute.o
 
 ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \
+$(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_parser
 $(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_registry
 
 all: $(ALL_BINS)
@@ -25,14 +26,15 @@ $(BIN)/pipectl: $(BUILD)/pipectl.o $(OBJS_NET) | $(BIN)
 $(BIN)/test_core: $(BUILD)/test_core.o $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/test_scheduler: $(BUILD)/test_scheduler.o $(OBJS_CORE) | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^
+$(BIN)/test_parser: $(BUILD)/test_parser.o $(BUILD)/yaml_parser.o $(BUILD)/validator.o $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
 
 $(BIN)/test_registry: $(BUILD)/test_registry.o $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 test: all
 	@echo "Ejecutando suite de pruebas local..."
+	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_parser
 	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry
 
 $(BUILD)/%.o: src/server/%.c | $(BUILD)

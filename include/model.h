@@ -59,6 +59,7 @@ typedef struct {
     bool has_depends_on;    // flase = dependsOn wasnt writen on; true n = 0 = empty list
     condition_t condition;
     int timeout_seconds;    // 0 = no limit
+    condition_t condition;
     step_def_t *steps;
     size_t n_steps;
 } job_def_t;
