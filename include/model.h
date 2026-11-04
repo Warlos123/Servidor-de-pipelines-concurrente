@@ -1,5 +1,7 @@
 #ifndef MODEL_H
 #define MODEL_H
+#include "logstore.h"
+
 
 #include <omp.h>
 #include <stdatomic.h>
@@ -102,7 +104,8 @@ typedef struct {
     status_t status;           
     struct timespec start;      
     struct timespec end;        
-    step_rt_t *steps;           
+    step_rt_t *steps;         
+    job_log_t log;  
 } job_rt_t;
 
 typedef struct {

@@ -9,9 +9,10 @@
 //Executes an already validated command and writes the reply.
 int command_execute(const command_t *command, const char *yaml, size_t yaml_len, char *body, size_t size);
 
-void command_follow(const command_t *command, int file_descriptor);
+//LOGS <id> [job] [FOLLOW]
+void command_logs(const command_t *command, int file_descriptor);
 
-//Implemented in fdtd_server.c
+//Implemented in pipelined.c
 //stops accepting connections and starts the shutdown.
 void server_request_shutdown(void);
 

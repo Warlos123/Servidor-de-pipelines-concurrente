@@ -308,6 +308,70 @@ static void test_cycles(void){
 
 
 
+//ARTIFACTS
+
+static void test_artifacts(void){
+    printf("artifacts\n");
+
+    //Valid: download from the previous stage, from an ancestor job in the same stage,
+    //and from an earlier step of the same job.
+    error_list_t errors = {0};
+    pipeline_t *pipeline = parse(
+        "stages:\n"
+        "- stage: build\n"
+        "  jobs: [{job: compile, steps: [{publish: out, artifact: app}]}]\n"
+        "- stage: test\n"
+        "  jobs:\n"
+        "  - {job: unit, steps: [{download: app}, {publish: report.txt, artifact: report}]}\n"
+        "  - {job: upload, dependsOn: unit, steps: [{download: report}]}\n"
+        "  - job: self\n"
+        "    steps:\n"
+        "    - publish: tmp\n"
+        "      artifact: own\n"
+        "    - download: own\n",
+        &errors);
+
+    CHECK(pipeline != NULL && errors.count == 0);
+
+    pipeline_free(pipeline);
+    error_list_free(&errors);
+
+    //Two publish steps with the same name.
+    expect_error(
+        "stages:\n- stage: s\n  jobs:\n"
+        "  - {job: a, steps: [{publish: x, artifact: app}]}\n"
+        "  - {job: b, steps: [{publish: y, artifact: app}]}\n",
+        "line 5: artifact 'app' is already published at line 4");
+
+    //Nobody publishes it.
+    expect_error(
+        "stages:\n- stage: s\n  jobs: [{job: a, steps: [{download: nope}]}]\n",
+        "line 3: download of unknown artifact 'nope'");
+
+    //Published by a parallel job of the same stage.
+    expect_error(
+        "stages:\n- stage: s\n  jobs:\n"
+        "  - {job: a, steps: [{publish: x, artifact: app}]}\n"
+        "  - {job: b, steps: [{download: app}]}\n",
+        "published by job 'a', which doesn't always finish before this step");
+
+    //dependsOn: [] makes the stage start right away, so it doesn't wait for build.
+    expect_error(
+        "stages:\n"
+        "- {stage: build, jobs: [{job: a, steps: [{publish: x, artifact: app}]}]}\n"
+        "- {stage: docs, dependsOn: [], jobs: [{job: b, steps: [{download: app}]}]}\n",
+        "published by job 'a', which doesn't always finish before this step");
+
+    //Same job, but the publish comes after the download.
+    expect_error(
+        "stages:\n- stage: s\n  jobs:\n  - job: a\n    steps:\n"
+        "    - download: app\n"
+        "    - publish: x\n"
+        "      artifact: app\n",
+        "line 6: artifact 'app' is published later in this job (line 7)");
+}
+
+
 //ALL THE ERRORS AT ONCE
 static void test_all_errors_reported(void){
     printf("parser and validator errors in one answer\n");
@@ -339,6 +403,7 @@ int main(void){
     test_unknown_keys();
     test_duplicates_and_references();
     test_cycles();
+    test_artifacts();
     test_all_errors_reported();
 
     printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);

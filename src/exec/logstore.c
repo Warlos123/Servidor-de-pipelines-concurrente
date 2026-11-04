@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>   /* nanosleep */
+
 
 #define LOG_INITIAL_SIZE 4096
 
@@ -17,7 +17,8 @@ int log_init(job_log_t *log)
     log->size   = LOG_INITIAL_SIZE;
     log->used   = 0;
     log->closed = false;
-    omp_init_lock(&log->lock);
+    pthread_mutex_init(&log->mutex, NULL);
+    pthread_cond_init(&log->changed, NULL);
     return 0;
 }
 
@@ -33,7 +34,7 @@ void log_append(job_log_t *log, const char *line)
     size_t total  = len + (needs_nl ? 1 : 0);
 
 #ifndef SIN_PROTECCION
-    omp_set_lock(&log->lock);
+    pthread_mutex_lock(&log->mutex);
 #endif
 
     /* Grow buffer if needed */
@@ -43,7 +44,7 @@ void log_append(job_log_t *log, const char *line)
         if (newbuf == NULL) {
             /* Out of memory: drop the line silently rather than crash */
 #ifndef SIN_PROTECCION
-            omp_unset_lock(&log->lock);
+            pthread_mutex_unlock(&log->mutex);
 #endif
             return;
         }
@@ -58,58 +59,75 @@ void log_append(job_log_t *log, const char *line)
         log->used++;
     }
 
+    pthread_cond_broadcast(&log->changed);
+
 #ifndef SIN_PROTECCION
-    omp_unset_lock(&log->lock);
+    pthread_mutex_unlock(&log->mutex);
 #endif
 }
 
-size_t log_read(job_log_t *log, size_t *offset, char *buf, size_t cap,
-                bool *done)
+size_t log_read(job_log_t *log, size_t *offset, char *buf, size_t cap, bool *done)
 {
-    /* Spin-wait with a short sleep when no data is available yet.
-     * This is called by the --follow handler; it may loop many times. */
-    for (;;) {
-        omp_set_lock(&log->lock);
-        size_t available = (log->used > *offset) ? (log->used - *offset) : 0;
-        bool   is_closed = log->closed;
-        omp_unset_lock(&log->lock);
+    pthread_mutex_lock(&log->mutex);
 
-        if (available > 0) {
-            size_t to_copy = (available < cap) ? available : cap;
-            omp_set_lock(&log->lock);
-            memcpy(buf, log->buf + *offset, to_copy);
-            omp_unset_lock(&log->lock);
-            *offset += to_copy;
-
-            /* Re-check closed after reading */
-            omp_set_lock(&log->lock);
-            *done = log->closed && (*offset >= log->used);
-            omp_unset_lock(&log->lock);
-
-            return to_copy;
-        }
-
-        if (is_closed) {
-            *done = true;
-            return 0;
-        }
-
-        /* Wait a bit before polling again */
-        struct timespec ts = { .tv_sec = 0, .tv_nsec = 10000000L }; /* 10 ms */
-        nanosleep(&ts, NULL);
+    //Sleeps (releasing the mutex) until there is new text or the job finished.
+    while (log->used <= *offset && !log->closed) {
+        pthread_cond_wait(&log->changed, &log->mutex);
     }
+
+    size_t to_copy = 0;
+
+    if (log->used > *offset) {
+        to_copy = log->used - *offset;
+
+        if (to_copy > cap) {
+            to_copy = cap;
+        }
+
+        memcpy(buf, log->buf + *offset, to_copy);
+        *offset += to_copy;
+    }
+
+    *done = log->closed && *offset >= log->used;
+
+    pthread_mutex_unlock(&log->mutex);
+    return to_copy;
+}
+
+char *log_copy(job_log_t *log, size_t *len)
+{
+    pthread_mutex_lock(&log->mutex);
+
+    char *copy = malloc(log->used + 1);
+
+    if (copy != NULL) {
+        memcpy(copy, log->buf, log->used);
+        copy[log->used] = '\0';
+        *len = log->used;
+    }
+
+    pthread_mutex_unlock(&log->mutex);
+    return copy;
 }
 
 void log_close(job_log_t *log)
 {
-    omp_set_lock(&log->lock);
+    pthread_mutex_lock(&log->mutex);
     log->closed = true;
-    omp_unset_lock(&log->lock);
+
+    //Wakes the readers so they see the log is finished and stop waiting.
+    pthread_cond_broadcast(&log->changed);
+    pthread_mutex_unlock(&log->mutex);
 }
 
 void log_destroy(job_log_t *log)
 {
-    omp_destroy_lock(&log->lock);
+    if (log->buf == NULL) {
+        return;
+    }
+
+    pthread_mutex_destroy(&log->mutex);
+    pthread_cond_destroy(&log->changed);
     free(log->buf);
     log->buf  = NULL;
     log->size = 0;

@@ -121,8 +121,8 @@ static void server_command(int file_descriptor, const command_t *command){
     }
 
     //LOGS [FOLLOW]
-    if(command->type == C_LOGS && command->follow){
-        command_follow(command, file_descriptor);
+    if(command->type == C_LOGS){
+        command_logs(command, file_descriptor);        
         return;
     }
 
@@ -341,6 +341,9 @@ int main(int argc, char **argv)
     {
         perror("close(listen_file_descriptor)");
     }
+
+    //wake every handler blocked in LOGS FOLLOW
+    registry_close_logs(&g_registry);
 
     //wait for every handler first: a handler may still submit to the scheduler
     for(int i = 0; i < MAX_ACTIVE_THREADS; i++){

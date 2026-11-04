@@ -7,6 +7,8 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
 
 
 
@@ -102,8 +104,6 @@ static int command_cancel(const command_t *command, char *body, size_t size){
 int command_execute(const command_t *command, const char *yaml, size_t yaml_len, char *body, size_t size){
 
 
-
-    //ALL CASES ARE NOT IMPLEMENTED YET, NEED TO CHANGE
     switch (command->type)
     {
 
@@ -115,10 +115,6 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
     case C_STATUS:
         return command_status(command, body, size);
 
-    //LOGS
-    case C_LOGS:
-        snprintf(body, size, "use --follow for streaming logs");
-        return 1;
 
     //CANCEL
     case C_CANCEL:
@@ -142,9 +138,142 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
 
 
 //LOGS [FOLLOW]
-void command_follow(const command_t *command, int file_descriptor){
 
-    (void)command;
+#define LOG_CHUNK 4096
 
-    (void)protocol_send_response(file_descriptor, 0, "NOT IMPLEMENTED");
+typedef struct {
+    char *text;
+    size_t used;
+    size_t size;
+} text_buffer_t;
+
+
+//Adds len bytes of piece at the end of buffer
+static int text_append(text_buffer_t *buffer, const char *piece, size_t len){
+    if(buffer->used + len + 1 > buffer->size){
+        size_t size = buffer->size * 2 + len + 1;
+        char *text = realloc(buffer->text, size);
+
+        if(text == NULL)
+            return -1;
+
+        buffer->text = text;
+        buffer->size = size;
+    }
+
+    memcpy(buffer->text + buffer->used, piece, len);
+    buffer->used += len;
+    buffer->text[buffer->used] = '\0';
+    return 0;
+}
+
+
+static bool job_selected(const run_t *run, size_t g, const command_t *command){
+    if(command->job[0] == '\0')
+        return true;
+
+    return strcmp(run->jobs[g].def->name, command->job) == 0;
+}
+
+
+//Header written before each job's lines
+static void job_header(const run_t *run, size_t g, char *header, size_t size){
+    snprintf(header, size, "== %s/%s ==\n", run->pipeline->stages[run->jobs[g].stage].name, run->jobs[g].def->name);
+}
+
+
+//LOGS <id> [job]
+static void send_whole_logs(int file_descriptor, run_t *run, const command_t *command){
+    text_buffer_t buffer = {NULL, 0, 0};
+    int failed = 0;
+
+    for(size_t g = 0; g < run->n_jobs && !failed; g++){
+        if(!job_selected(run, g, command))
+            continue;
+
+        char header[256];
+        job_header(run, g, header, sizeof header);
+
+        size_t len = 0;
+        char *lines = log_copy(&run->jobs[g].log, &len);
+
+        if(lines == NULL || text_append(&buffer, header, strlen(header)) < 0 || text_append(&buffer, lines, len) < 0)
+            failed = 1;
+
+        free(lines);
+    }
+
+    if(failed)
+        (void)protocol_send_response(file_descriptor, 0, "out of memory");
+    else
+        (void)protocol_send_response(file_descriptor, 1, buffer.text);
+
+    free(buffer.text);
+}
+
+
+//LOGS <id> FOLLOW
+static void follow_logs(int file_descriptor, run_t *run, const command_t *command){
+    char chunk[LOG_CHUNK + 1];
+
+    for(size_t g = 0; g < run->n_jobs; g++){
+        if(!job_selected(run, g, command))
+            continue;
+
+        job_header(run, g, chunk, sizeof chunk);
+
+       
+        if(protocol_send_response(file_descriptor, 1, chunk) < 0)
+            return;
+
+        size_t offset = 0;
+        bool done = false;
+
+        while(!done){
+            size_t n = log_read(&run->jobs[g].log, &offset, chunk, LOG_CHUNK, &done);
+
+            if(n == 0)
+                continue;
+
+            
+            chunk[n] = '\0';
+
+            if(protocol_send_response(file_descriptor, 1, chunk) < 0)
+                return;
+        }
+    }
+
+    //Empty response: the run's selected logs are complete.
+    (void)protocol_send_response(file_descriptor, 1, "");
+}
+
+
+void command_logs(const command_t *command, int file_descriptor){
+    run_t *run = registry_find(server_registry(), (uint64_t)command->id);
+    char message[128];
+
+    if(run == NULL){
+        snprintf(message, sizeof message, "run %lu not found", command->id);
+        (void)protocol_send_response(file_descriptor, 0, message);
+        return;
+    }
+
+    //With a job name, at least one job of the run must have it.
+    bool found = false;
+
+    for(size_t g = 0; g < run->n_jobs; g++){
+        if(job_selected(run, g, command))
+            found = true;
+    }
+
+    if(!found){
+        snprintf(message, sizeof message, "job '%s' not found in run %lu", command->job, command->id);
+        (void)protocol_send_response(file_descriptor, 0, message);
+        return;
+    }
+
+    if(command->follow)
+        follow_logs(file_descriptor, run, command);
+    else
+        send_whole_logs(file_descriptor, run, command);
 }
