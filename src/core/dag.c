@@ -1,6 +1,9 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "dag.h"
 #include "model.h"
 
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -124,6 +127,17 @@ int dag_build(run_t *run)
     return 0;
 }
 
+static size_t pending_decrement(atomic_size_t *pending){
+#ifdef SIN_PROTECCION
+    size_t before = atomic_load_explicit(pending, memory_order_relaxed);
+    sched_yield();
+    atomic_store_explicit(pending, before - 1, memory_order_relaxed);
+    return before;
+#else
+    return atomic_fetch_sub(pending, 1);
+#endif
+}
+
 size_t dag_release_dependents(run_t *run, size_t job, size_t *ready)
 {
     size_t n_ready = 0;
@@ -131,7 +145,7 @@ size_t dag_release_dependents(run_t *run, size_t job, size_t *ready)
 
     for (size_t i = 0; i < finished->n_dependents; i++) {
         size_t d = finished->dependents[i];
-        size_t before = atomic_fetch_sub(&run->jobs[d].pending, 1);
+        size_t before = pending_decrement(&run->jobs[d].pending);
         if (before == 1) {
             ready[n_ready] = d;
             n_ready++;
