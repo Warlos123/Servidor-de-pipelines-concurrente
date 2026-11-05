@@ -1,13 +1,9 @@
+name: cancel_test
 stages:
 - stage: test
   jobs:
   - job: cancel_me
     steps:
-    - task: Histogram@1
+    - task: Sleep@1
       inputs:
-        file: ../tests/determinism_data.txt
-        threads: 1
-        output: hist.csv
-        bins: 256
-YAML
-,path:
+        seconds: 5

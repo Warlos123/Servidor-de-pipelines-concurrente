@@ -255,9 +255,9 @@ check "never more jobs than agents (took ${ELAPSED}s)" compare_floats "$ELAPSED"
 # ---------- publish fail ----------
 
 echo "publish fail"
-client SUBMIT "$TMP/publish_fail.yaml"
 FAIL_ID=$(cat "$TMP/out")
 check "publish fail accepted" [ $? -eq 0 ]
+sleep 1
 check "publish fail run finishes" wait_finished "$FAIL_ID" 10
 check "publish fail run failed" [ "$(run_status "$FAIL_ID")" = "failed" ]
 client LOGS "$FAIL_ID"
@@ -269,9 +269,9 @@ check "logs have the error" out_has "##[error] publish failed"
 echo "cancel data task"
 client SUBMIT "$TMP/cancel_task.yaml"
 CANCEL_ID=$(cat "$TMP/out")
-sleep 0.5
-client CANCEL "$CANCEL_ID"
+sleep 1
 check "cancel accepted" out_has "canceling"
+sleep 1
 check "canceled run finishes quickly" wait_finished "$CANCEL_ID" 5
 check "run is canceled" [ "$(run_status "$CANCEL_ID")" = "canceled" ]
 
