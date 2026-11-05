@@ -2,10 +2,11 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "net_util.h"
-#include "protocol.h" 
+#include "protocol.h"
 #include "commands.h"
 #include "scheduler.h"
 #include "job_execute.h"
+#include "builtin_tasks.h"
 
 
 #include <errno.h>
@@ -220,12 +221,15 @@ static int parse_int(const char *text, long min, long max, long *out)
 }
 
 
-static int parse_args(int argc, char **argv, unsigned short *port, size_t *agents, const char **work_directory)
+static int parse_args(int argc, char **argv, unsigned short *port, size_t *agents,
+                      const char **work_directory, int *omp_threads)
 {
     long value_port, value_agents;
 
-    if(argc != 4){
-        fprintf(stderr, "usage: %s <port> <agents> <work directory>\n", argv[0]);
+    *omp_threads = 0; //0: no cap, tasks use the thread count they request
+
+    if(argc < 4 || argc > 6){
+        fprintf(stderr, "usage: %s <port> <agents> <work directory> [--omp-threads <max>]\n", argv[0]);
         return -1;
     }
 
@@ -243,6 +247,30 @@ static int parse_args(int argc, char **argv, unsigned short *port, size_t *agent
     *agents = (size_t)value_agents;
     *work_directory = argv[3];
 
+    //Optional cap on the OpenMP threads each data task may use
+    for(int i = 4; i < argc; i++){
+        if(strcmp(argv[i], "--omp-threads") == 0){
+            long value_threads;
+
+            if(i + 1 >= argc){
+                fprintf(stderr, "missing value for --omp-threads\n");
+                return -1;
+            }
+
+            if(parse_int(argv[i + 1], 1, 4096, &value_threads) < 0){
+                fprintf(stderr, "invalid --omp-threads '%s'\n", argv[i + 1]);
+                return -1;
+            }
+
+            i++;
+            *omp_threads = (int)value_threads;
+        }
+        else {
+            fprintf(stderr, "unknown argument '%s'\n", argv[i]);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -252,9 +280,14 @@ int main(int argc, char **argv)
     unsigned short port;
     size_t agents;
     const char *work_directory;
+    int omp_threads;
 
-    if(parse_args(argc, argv, &port, &agents, &work_directory) < 0)
+    if(parse_args(argc, argv, &port, &agents, &work_directory, &omp_threads) < 0)
         return EXIT_FAILURE;
+
+    //Cap for the OpenMP threads of the data tasks (WordCount, Histogram).
+    //Must be set before the agents start: they read it without a lock.
+    task_set_max_threads(omp_threads);
 
     if (install_signal_handlers() < 0)
         return EXIT_FAILURE;

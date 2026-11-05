@@ -20,6 +20,57 @@ const char *task_input_get(const kv_t *inputs, size_t n, const char *key)
     return NULL;
 }
 
+/*
+ * Server-wide cap on task threads. Written once in main() before the
+ * scheduler starts, read-only from then on: no lock needed.
+ * 0 means no cap (the task runs with the thread count it requested).
+ */
+static int g_max_task_threads = 0;
+
+void task_set_max_threads(int max_threads)
+{
+    if (max_threads < 0) {
+        max_threads = 0;
+    }
+    g_max_task_threads = max_threads;
+}
+
+int task_max_threads(void)
+{
+    return g_max_task_threads;
+}
+
+/*
+ * Effective thread count for a data task: the requested `threads` input,
+ * or the server cap when it is lower. With several agents running tasks at
+ * the same time, agents x task threads can exceed the cores available;
+ * the cap from --omp-threads keeps them from oversubscribing the machine.
+ */
+int task_effective_threads(int requested, job_context_t *ctx,
+                                  const char *task_name)
+{
+    if (requested < 1) {
+        requested = 1;
+    }
+
+    int cap = task_max_threads();
+    if (cap > 0 && requested > cap) {
+        char msg[128];
+        snprintf(msg, sizeof msg,
+                 "##[task] %s: threads=%d requested, clamped to %d by --omp-threads.",
+                 task_name, requested, cap);
+        log_append(ctx->log, msg);
+        return cap;
+    }
+
+    return requested;
+}
+
+/* =========================================================
+ * Sleep@1
+ * Inputs: seconds (integer string)
+ * ========================================================= */
+
 int task_sleep(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 {
     const char *sec_str = task_input_get(inputs, n_inputs, "seconds");
@@ -57,6 +108,12 @@ int task_sleep(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     return 0;
 }
 
+/* =========================================================
+ * Cpu@1
+ * Inputs: iterations, seed
+ * Sets variable CPU_RESULT.
+ * ========================================================= */
+
 int task_cpu(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 {
     const char *iter_str = task_input_get(inputs, n_inputs, "iterations");
@@ -80,13 +137,18 @@ int task_cpu(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
              iterations, seed);
     log_append(ctx->log, msg);
 
-    /* Sequential LCG, so the result does not depend on the thread count. */
+    /*
+     * Deterministic CPU-bound computation: a simple linear congruential
+     * generator iterated N times.  Result is the same regardless of thread
+     * count because it is a sequential computation.
+     */
     unsigned long state = seed;
     for (long i = 0; i < iterations; i++) {
         /* LCG constants from Knuth / MMIX */
         state = state * 6364136223846793005UL + 1442695040888963407UL;
     }
 
+    /* Store result as a decimal string in CPU_RESULT */
     char result_str[32];
     snprintf(result_str, sizeof result_str, "%lu", state);
     if (var_map_set(&ctx->vars, "CPU_RESULT", result_str) < 0) {
