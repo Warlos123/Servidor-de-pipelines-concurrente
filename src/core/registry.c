@@ -288,3 +288,32 @@ void registry_close_logs(registry_t *registry){
 
     omp_unset_lock(&registry->lock);
 }
+size_t registry_cancel_all(registry_t *registry){
+    omp_set_lock(&registry->lock);
+    size_t count = registry->count;
+    run_t **copy = malloc((count + 1) * sizeof *copy);
+    if (copy == NULL) {
+        omp_unset_lock(&registry->lock);
+        return 0;
+    }
+    for (size_t i = 0; i < count; i++) {
+        copy[i] = registry->runs[i];
+    }
+    omp_unset_lock(&registry->lock);
+
+    size_t canceled = 0;
+    for (size_t i = 0; i < count; i++) {
+        run_t *run = copy[i];
+        omp_set_lock(&run->lock);
+        bool finished = status_is_final(run->status);
+        omp_unset_lock(&run->lock);
+
+        if (!finished) {
+            atomic_store(&run->cancel_requested, true);
+            canceled++;
+        }
+    }
+
+    free(copy);
+    return canceled;
+}

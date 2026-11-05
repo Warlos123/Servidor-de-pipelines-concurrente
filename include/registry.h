@@ -30,4 +30,6 @@ run_t *registry_find(registry_t *registry, uint64_t run_id);
 
 void registry_close_logs(registry_t *registry);
 
+size_t registry_cancel_all(registry_t *registry);
+
 #endif

@@ -227,11 +227,93 @@ static void test_concurrent_submit(void)
     registry_destroy(&registry);
 }
 
+static double elapsed_ms(const struct timespec *start){
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (double)(now.tv_sec - start->tv_sec) * 1000.0 + (double)(now.tv_nsec - start->tv_nsec) / 1e6;
+}
+
+static void test_cancel_all(void){
+    printf("cancel all: shutdown stops unfinished runs\n");
+    fake_ctx_t ctx = { .ms = 100 };
+    scheduler_t scheduler;
+    registry_t registry;
+
+    int init = registry_init(&registry);
+    CHECK(init == 0);
+    if(init != 0){
+        return;
+    }
+    CHECK(scheduler_start(&scheduler, 2, fake_runner, &ctx) == 0);
+
+    uint64_t id = 0;
+    CHECK(registry_submit(&registry, &scheduler, make_pipeline(), &id) == 0);
+    CHECK(registry_submit(&registry, &scheduler, make_pipeline(), &id) == 0);
+    CHECK(registry_submit(&registry, &scheduler, make_pipeline(), &id) == 0);
+    sleep_ms(30);
+
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    CHECK(registry_cancel_all(&registry) == 3);
+    scheduler_stop(&scheduler);
+
+    double ms = elapsed_ms(&start);
+    printf("  stopped in %.0f ms (all the work would take about 1000 ms)\n", ms);
+    CHECK(ms < 500.0);
+
+    size_t running = 0;
+    size_t canceled = 0;
+    for(size_t r = 0; r < registry.count; r++){
+        run_t *run = registry.runs[r];
+        for(size_t g = 0; g < run->n_jobs; g++){
+            if(run->jobs[g].status == ST_RUNNING){
+                running++;
+            }
+            if(run->jobs[g].status == ST_CANCELED){
+                canceled++;
+            }
+        }
+    }
+    CHECK(running == 0);
+    CHECK(canceled >= 3 * WIDE_JOBS - 2);
+
+    registry_destroy(&registry);
+}
+
+static void test_cancel_all_skips_finished(void){
+    printf("cancel all leaves finished runs alone\n");
+    fake_ctx_t ctx = { .ms = 1 };
+    scheduler_t scheduler;
+    registry_t registry;
+
+    int init = registry_init(&registry);
+    CHECK(init == 0);
+    if(init != 0){
+        return;
+    }
+    CHECK(scheduler_start(&scheduler, N_AGENTS, fake_runner, &ctx) == 0);
+
+    uint64_t id = 0;
+    CHECK(registry_submit(&registry, &scheduler, make_pipeline(), &id) == 0);
+    if(registry.count == 1){
+        CHECK(wait_finished(registry.runs[0]));
+    }
+    CHECK(registry_cancel_all(&registry) == 0);
+    if(registry.count == 1){
+        CHECK(registry.runs[0]->status == ST_SUCCEEDED);
+    }
+
+    scheduler_stop(&scheduler);
+    registry_destroy(&registry);
+}
+
 int main(void)
 {
     test_status_and_list();
     test_cancel();
     test_concurrent_submit();
+    test_cancel_all();
+    test_cancel_all_skips_finished();
     printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
     if (g_failures == 0) {
         return EXIT_SUCCESS;

@@ -6,6 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void var_map_free(var_map_t *map){
+    for(size_t i = 0; i < map->count; i++){
+        free(map->entries[i].key);
+        free(map->entries[i].value);
+    }
+    free(map->entries);
+}
+
 static run_t *run_create_fail(run_t *run)
 {
     run->pipeline = NULL;
@@ -81,6 +89,7 @@ void run_destroy(run_t *run)
         free(run->jobs[i].deps);
         free(run->jobs[i].dependents);
         free(run->jobs[i].steps);
+        var_map_free(&run->jobs[i].vars);
         log_destroy(&run->jobs[i].log);
     }
 
