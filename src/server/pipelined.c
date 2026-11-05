@@ -1,3 +1,4 @@
+#define _GNU_SOURCE //accept 4
 #define _POSIX_C_SOURCE 200809L
 
 #include "net_util.h"
@@ -59,6 +60,7 @@ static void on_sigint(int signum)
 {
     (void)signum;
     g_running = 0;
+    shutdown(listen_file_descriptor, SHUT_RD);
 }
 
 int server_is_running(void){
@@ -231,7 +233,7 @@ static int parse_args(int argc, char **argv, unsigned short *port, size_t *agent
     long value_port, value_agents;
 
     if(argc != 4){
-        fprintf(stderr, "ERROR: <port> <agents> <work directory>");
+        fprintf(stderr, "usage: %s <port> <agents> <work directory>\n", argv[0]);
         return -1;
     }
 
@@ -315,7 +317,7 @@ int main(int argc, char **argv)
         
         
                                     //accept(int socket, struct sockaddr *address, socklen_t *address_len)
-        int client_file_descriptor = accept(listen_file_descriptor, NULL, NULL);
+        int client_file_descriptor = accept4(listen_file_descriptor, NULL, NULL, SOCK_CLOEXEC);
         if (client_file_descriptor < 0)
         {
             sem_post(&g_counting_sem);

@@ -47,10 +47,25 @@ static void finish_job(scheduler_t *scheduler, run_t *run, size_t job, status_t 
 {
     omp_set_lock(&run->lock);
     job_set_status(run, job, final);
+
+    // Steps that never started: canceled if the job was canceled, skipped otherwise
+    status_t not_started = ST_SKIPPED;
+    if (final == ST_CANCELED) {
+        not_started = ST_CANCELED;
+    }
+
+    job_rt_t *finished = &run->jobs[job];
+    for (size_t k = 0; k < finished->def->n_steps; k++) {
+        if (finished->steps[k].status == ST_QUEUED) {
+            finished->steps[k].status = not_started;
+        }
+    }
+
     if (run->jobs_finished == run->n_jobs) {
         run->status = run_aggregate(run);
         clock_gettime(CLOCK_REALTIME, &run->end);
     }
+    
     omp_unset_lock(&run->lock);
 
     log_close(&run->jobs[job].log);

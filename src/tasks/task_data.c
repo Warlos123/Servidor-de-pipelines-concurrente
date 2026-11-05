@@ -47,31 +47,30 @@ static unsigned int hash_word(const char *w)
     return h & (HASH_SIZE - 1);
 }
 
-static void table_add(word_table_t *t, const char *w)
+static void table_add(word_table_t *t, const char *w, long count)
 {
     unsigned int h = hash_word(w);
     for (word_node_t *n = t->buckets[h]; n != NULL; n = n->next) {
         if (strcmp(n->word, w) == 0) {
-            n->count++;
-            t->total++;
+            n->count += count;
+            t->total += count;
             return;
         }
     }
     word_node_t *n = calloc(1, sizeof *n);
     if (n == NULL) return;
     strncpy(n->word, w, MAX_WORD_LEN - 1);
-    n->count = 1;
+    n->count = count;
     n->next  = t->buckets[h];
     t->buckets[h] = n;
-    t->total++;
+    t->total += count;
 }
 
 static void table_merge(word_table_t *dst, const word_table_t *src)
 {
-    dst->total += src->total;
     for (int b = 0; b < HASH_SIZE; b++) {
         for (word_node_t *n = src->buckets[b]; n != NULL; n = n->next) {
-            table_add(dst, n->word);
+            table_add(dst, n->word, n->count);
         }
     }
 }
@@ -128,7 +127,12 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     int n_threads = (int)strtol(thr_str, NULL, 10);
     if (n_threads < 1) n_threads = 1;
-    int top_n = top_str ? (int)strtol(top_str, NULL, 10) : 0;
+
+    //top is 10 when it isn't given
+    int top_n = 10;
+    if (top_str != NULL) {
+        top_n = (int)strtol(top_str, NULL, 10);
+    }
 
     /* Build absolute paths */
     char abs_in[PATH_MAX], abs_out[PATH_MAX];
@@ -156,7 +160,7 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     size_t size = (size_t)fsize;
     char  *data = malloc(size + 1);
     if (data == NULL) { fclose(f); return -1; }
-     size_t read_bytes = fread(data, 1, size, f);
+    size_t read_bytes = fread(data, 1, size, f);
     fclose(f);
 
     if (read_bytes != size) {
@@ -181,10 +185,12 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     #pragma omp parallel for num_threads(n_threads) schedule(static)
     for (int t = 0; t < n_threads; t++) {
-        size_t start = align_to_word_boundary(data,
-                           (size_t)t * chunk == 0 ? 0
-                           : align_to_word_boundary(data, (size_t)t * chunk, size),
-                           size);
+        // Thread 0 starts at the first byte; the others start where the previous one ends
+        size_t start = 0;
+        if (t > 0) {
+            start = align_to_word_boundary(data, (size_t)t * chunk, size);
+        }
+
         size_t raw_end = ((size_t)t + 1) * chunk;
         size_t end = (raw_end >= size) ? size
                      : align_to_word_boundary(data, raw_end, size);
@@ -197,13 +203,13 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
                 if (wlen < MAX_WORD_LEN - 1) word[wlen++] = c;
             } else if (wlen > 0) {
                 word[wlen] = '\0';
-                table_add(&per_thread[t], word);
+                table_add(&per_thread[t], word, 1);
                 wlen = 0;
             }
         }
         if (wlen > 0) {
             word[wlen] = '\0';
-            table_add(&per_thread[t], word);
+            table_add(&per_thread[t], word, 1);
         }
     }
     free(data);
@@ -377,8 +383,8 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     }
     fprintf(out, "bin_start,bin_end,count\n");
     for (int b = 0; b < n_bins; b++) {
-        int lo = b * 256 / n_bins;
-        int hi = (b + 1) * 256 / n_bins - 1;
+        int lo = (b * 256 + n_bins - 1) / n_bins;
+        int hi = ((b + 1) * 256 + n_bins - 1) / n_bins - 1;
         fprintf(out, "%d,%d,%ld\n", lo, hi, bin_counts[b]);
     }
     fclose(out);

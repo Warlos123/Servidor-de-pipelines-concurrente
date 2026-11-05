@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <spawn.h>
+#include <sys/wait.h>
 
 /* ---------- internal helpers ---------- */
 
@@ -54,11 +56,11 @@ static int mkdir_p(const char *path)
     return 0;
 }
 
+
+extern char **environ;
+
 /*
- * Recursive copy using nftw + a global destination prefix.
- * We use a simple approach: spawn "cp -r src dest" via system().
- * This avoids implementing a full recursive copy in C and is acceptable
- * since artifact operations are not performance-critical.
+ * Copies src to dest with "cp -r"
  */
 static int copy_recursive(const char *src, const char *dest)
 {
@@ -75,18 +77,25 @@ static int copy_recursive(const char *src, const char *dest)
             return -1;
         }
     }
+
     free(parent);
 
-    /* Use cp -r for simplicity; artifact dirs are small */
-    size_t cmd_len = strlen(src) + strlen(dest) + 32;
-    char  *cmd     = malloc(cmd_len);
-    if (cmd == NULL) {
+    char *argv[] = { "cp", "-r", "--", (char *)src, (char *)dest, NULL };
+    pid_t pid;
+    if (posix_spawnp(&pid, "cp", NULL, NULL, argv, environ) != 0) {
         return -1;
     }
-    snprintf(cmd, cmd_len, "cp -r -- '%s' '%s'", src, dest);
-    int rc = system(cmd);
-    free(cmd);
-    return (rc == 0) ? 0 : -1;
+
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            return -1;
+        }
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return 0;
+    }
+    return -1;
 }
 
 /* ---------- public API ---------- */
@@ -141,12 +150,12 @@ int artifact_publish(const artifact_store_t *store, const char *name,
 int artifact_download(const artifact_store_t *store, const char *name,
                       const char *dest_path, const char *workspace)
 {
-    size_t src_len = strlen(store->base_dir) + strlen(name) + 2;
+    size_t src_len = strlen(store->base_dir) + strlen(name) + 4;
     char  *src     = malloc(src_len);
     if (src == NULL) {
         return -1;
     }
-    snprintf(src, src_len, "%s/%s", store->base_dir, name);
+    snprintf(src, src_len, "%s/%s/.", store->base_dir, name);
 
     char *dst_abs = abs_path(workspace, dest_path);
     if (dst_abs == NULL) {

@@ -50,6 +50,12 @@ int task_sleep(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
             log_append(ctx->log, "##[task] Sleep cancelled.");
             return -1;
         }
+
+        if (job_timed_out(ctx)) {
+            log_append(ctx->log, "##[error] Timeout exceeded.");
+            return -1;
+        }
+        
         nanosleep(&ts, NULL);
     }
 
