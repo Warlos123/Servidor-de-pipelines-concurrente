@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <time.h>
 
-//Value returns index of search in case of failure
+// Returned when a name is not found.
 #define NO_INDEX SIZE_MAX
 
 typedef enum {
@@ -48,17 +48,17 @@ typedef struct {
     char *task;         // STEP_TASK: "WordCount@1", etc. 
     kv_t *inputs;       // STEP_TASK: map inputs 
     size_t n_inputs;
-    char *path;         // STEP_PUBLISH: route to publish / STEP_DOWNLOAD: destination 
-    char *artifact;     // artifact's name (publish y download)
+    char *path;         // STEP_PUBLISH: path to publish / STEP_DOWNLOAD: destination
+    char *artifact;     // artifact name (publish and download)
     bool continue_on_error;
     int line;           // line of YAML for message error
 } step_def_t;
 
 typedef struct {
     char *name;
-    char **depends_on;      // Worker's names in the same stage 
+    char **depends_on;      // job names in the same stage
     size_t n_depends_on;
-    bool has_depends_on;    // flase = dependsOn wasnt writen on; true n = 0 = empty list
+    bool has_depends_on;    // false: key absent; true with n = 0: empty list
     condition_t condition;
     int timeout_seconds;    // 0 = no limit
     step_def_t *steps;
@@ -69,7 +69,7 @@ typedef struct {
     char *name;
     char **depends_on;      // stages names 
     size_t n_depends_on;
-    bool has_depends_on;    // flase = depends on the previous stage 
+    bool has_depends_on;    // absent: implicit dep on the previous stage; []: explicit none
     condition_t condition;
     job_def_t *jobs;
     size_t n_jobs;

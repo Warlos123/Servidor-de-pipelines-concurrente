@@ -19,12 +19,6 @@ static int g_failures = 0;
 static int g_checks = 0;
 
 
-/* 
-The following block of code was partially made using: 
-Anthropic (2026). Claude(Opus 5.5) https://claude.ai
-*/
-
-
 #define CHECK(cond) do {                                              \
         g_checks++;                                                   \
         if (!(cond)) {                                                \

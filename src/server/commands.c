@@ -12,9 +12,8 @@
 
 
 
-//Each helper returns 1 = OK, 0 = ERR, like command_execute.
+// Each helper returns 1 = OK, 0 = ERR, like command_execute.
 
-//Writes every error, one per line, so the client sees them all at once.
 static void write_errors(const error_list_t *errors, char *body, size_t size){
     size_t used = 0;
     body[0] = '\0';
@@ -31,7 +30,6 @@ static void write_errors(const error_list_t *errors, char *body, size_t size){
 
 static int command_submit(const char *yaml, size_t yaml_len, char *body, size_t size){
 
-    //no new runs once the shutdown started.
     if(!server_is_running()){
         snprintf(body, size, "server is shutting down");
         return 0;
@@ -115,24 +113,18 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
     switch (command->type)
     {
 
-    //SUBMIT
     case C_SUBMIT:
         return command_submit(yaml, yaml_len, body, size);
-    
-    //STATUS 
+
     case C_STATUS:
         return command_status(command, body, size);
 
-
-    //CANCEL
     case C_CANCEL:
         return command_cancel(command, body, size);
-    
-    //LIST
+
     case C_LIST:
         return command_list(body, size);
 
-    //SHUTDOWN
     case C_SHUTDOWN:
         server_request_shutdown();
         snprintf(body, size, "shutting down");
@@ -145,8 +137,6 @@ int command_execute(const command_t *command, const char *yaml, size_t yaml_len,
 }
 
 
-//LOGS [FOLLOW]
-
 #define LOG_CHUNK 4096
 
 typedef struct {
@@ -156,7 +146,6 @@ typedef struct {
 } text_buffer_t;
 
 
-//Adds len bytes of piece at the end of buffer
 static int text_append(text_buffer_t *buffer, const char *piece, size_t len){
     if(buffer->used + len + 1 > buffer->size){
         size_t size = buffer->size * 2 + len + 1;
@@ -184,13 +173,11 @@ static bool job_selected(const run_t *run, size_t g, const command_t *command){
 }
 
 
-//Header written before each job's lines
 static void job_header(const run_t *run, size_t g, char *header, size_t size){
     snprintf(header, size, "== %s/%s ==\n", run->pipeline->stages[run->jobs[g].stage].name, run->jobs[g].def->name);
 }
 
 
-//LOGS <id> [job]
 static void send_whole_logs(int file_descriptor, run_t *run, const command_t *command){
     text_buffer_t buffer = {NULL, 0, 0};
     int failed = 0;
@@ -220,7 +207,6 @@ static void send_whole_logs(int file_descriptor, run_t *run, const command_t *co
 }
 
 
-//LOGS <id> FOLLOW
 static void follow_logs(int file_descriptor, run_t *run, const command_t *command){
     char chunk[LOG_CHUNK + 1];
 

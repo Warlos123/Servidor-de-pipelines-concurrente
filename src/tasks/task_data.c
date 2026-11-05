@@ -11,23 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* =========================================================
- * WordCount@1
- * Inputs: file, threads, output, top (optional)
- *
- * Counts:
- *   - Total words
- *   - Distinct words
- *   - Top-N most frequent (with alphabetical tie-break)
- *
- * "Word" = maximal sequence of ASCII letters/digits (case-insensitive).
- *
- * Parallelism: each thread processes a chunk of the file, then results
- * are merged in declaration order → deterministic.
- * ========================================================= */
-
 #define MAX_WORD_LEN 256
-#define HASH_SIZE    65536  /* power of 2, used for the per-thread word table */
+#define HASH_SIZE    65536
 
 typedef struct word_node {
     char             word[MAX_WORD_LEN];
@@ -128,13 +113,11 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     int n_threads = (int)strtol(thr_str, NULL, 10);
     if (n_threads < 1) n_threads = 1;
 
-    //top is 10 when it isn't given
     int top_n = 10;
     if (top_str != NULL) {
         top_n = (int)strtol(top_str, NULL, 10);
     }
 
-    /* Build absolute paths */
     char abs_in[PATH_MAX], abs_out[PATH_MAX];
     if (file_path[0] == '/')
         snprintf(abs_in, sizeof abs_in, "%s", file_path);
@@ -145,7 +128,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     else
         snprintf(abs_out, sizeof abs_out, "%s/%s", ctx->workspace, out_path);
 
-    /* Read the whole file into memory */
     FILE *f = fopen(abs_in, "rb");
     if (f == NULL) {
         char msg[PATH_MAX + 64];
@@ -172,7 +154,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     }
     data[size] = '\0';
 
-    /* Lowercase the entire buffer for case-insensitive comparison */
     for (size_t i = 0; i < size; i++) {
         data[i] = (char)tolower((unsigned char)data[i]);
     }
@@ -185,7 +166,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     #pragma omp parallel for num_threads(n_threads) schedule(static)
     for (int t = 0; t < n_threads; t++) {
-        // Thread 0 starts at the first byte; the others start where the previous one ends
         size_t start = 0;
         if (t > 0) {
             start = align_to_word_boundary(data, (size_t)t * chunk, size);
@@ -221,7 +201,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     }
     word_table_t *merged = &per_thread[0];
 
-    /* Count distinct words */
     long distinct = 0;
     for (int b = 0; b < HASH_SIZE; b++) {
         for (word_node_t *n = merged->buckets[b]; n != NULL; n = n->next) {
@@ -229,7 +208,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
         }
     }
 
-    /* Write output */
     FILE *out = fopen(abs_out, "w");
     if (out == NULL) {
         table_destroy(merged);
@@ -241,7 +219,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     fprintf(out, "distinct_words: %ld\n", distinct);
 
     if (top_n > 0) {
-        /* Collect all nodes into an array for sorting */
         word_node_t **arr = malloc((size_t)distinct * sizeof *arr);
         if (arr != NULL) {
             size_t idx = 0;
@@ -272,15 +249,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     return 0;
 }
 
-/* =========================================================
- * Histogram@1
- * Inputs: file, bins, threads, output
- *
- * Builds a byte-value histogram (bins evenly spaced over 0-255).
- * Writes CSV: bin_start,bin_end,count
- * Result deterministic for any thread count (integer arithmetic only).
- * ========================================================= */
-
 int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 {
     const char *file_path = task_input_get(inputs, n_inputs, "file");
@@ -310,7 +278,6 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     else
         snprintf(abs_out, sizeof abs_out, "%s/%s", ctx->workspace, out_path);
 
-    /* Read file */
     FILE *f = fopen(abs_in, "rb");
     if (f == NULL) {
         char msg[PATH_MAX + 64];
@@ -337,7 +304,6 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
         return -1;
     }
 
-    /* Per-thread local counts (256 byte values) */
     long (*local_counts)[256] = calloc((size_t)n_threads,
                                         256 * sizeof(long));
     if (local_counts == NULL) { free(data); return -1; }
@@ -364,7 +330,6 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     }
     free(local_counts);
 
-    /* Aggregate into bins */
     long *bin_counts = calloc((size_t)n_bins, sizeof *bin_counts);
     if (bin_counts == NULL) return -1;
 
@@ -374,7 +339,6 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
         bin_counts[bin] += global_counts[v];
     }
 
-    /* Write CSV */
     FILE *out = fopen(abs_out, "w");
     if (out == NULL) {
         free(bin_counts);

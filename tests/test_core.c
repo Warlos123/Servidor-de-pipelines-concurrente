@@ -1,7 +1,3 @@
-/* 
-The following block of code was partially made using: 
-Anthropic (2026). Claude(Opus 5.5) https://claude.ai
-*/
 #define _POSIX_C_SOURCE 200809L
 
 #include "dag.h"
@@ -23,14 +19,10 @@ static int g_checks = 0;
         }                                                             \
     } while (0)
 
-/* ---------- Pipeline de prueba armado a mano ----------
- * stages:
- *   - stage: Build                 (jobs globales 0 y 1)
- *     jobs: compilar, lint
- *   - stage: Test                  (jobs globales 2 y 3)
- *     jobs: unit, integ (dependsOn: unit)
- *   - stage: Deploy, dependsOn: [] (job global 4)
- *     jobs: subir
+/*
+ * Pipeline de prueba:
+ *   Build (compilar, lint) -> Test (unit, integ depende de unit)
+ *   -> Deploy (subir, sin dependencias).
  */
 static char **names(size_t n, const char **src)
 {
@@ -85,8 +77,6 @@ static bool contains(const size_t *arr, size_t n, size_t value)
     }
     return false;
 }
-
-/* ---------- Pruebas ---------- */
 
 static void test_status(void)
 {
@@ -151,33 +141,28 @@ static run_t *test_model(void)
 static void test_dag(run_t *run)
 {
     printf("dag\n");
-    /* Build no depende de nadie */
     CHECK(run->jobs[0].n_deps == 0);
     CHECK(run->jobs[1].n_deps == 0);
 
-    /* unit depende de toda la etapa Build */
     CHECK(run->jobs[2].n_deps == 2);
     CHECK(contains(run->jobs[2].deps, run->jobs[2].n_deps, 0));
     CHECK(contains(run->jobs[2].deps, run->jobs[2].n_deps, 1));
 
-    /* integ: toda la etapa Build + unit */
     CHECK(run->jobs[3].n_deps == 3);
     CHECK(contains(run->jobs[3].deps, run->jobs[3].n_deps, 2));
 
-    /* Deploy declaró dependsOn: [] */
     CHECK(run->jobs[4].n_deps == 0);
 
     CHECK(atomic_load(&run->jobs[3].pending) == 3);
     CHECK(run->jobs[0].n_dependents == 2);
 
-    /* Liberar dependientes */
     size_t ready[8];
-    size_t n = dag_release_dependents(run, 0, ready); /* termina compilar */
+    size_t n = dag_release_dependents(run, 0, ready);
     CHECK(n == 0);
-    n = dag_release_dependents(run, 1, ready);        /* termina lint */
-    CHECK(n == 1 && ready[0] == 2);                   /* unit queda lista */
-    n = dag_release_dependents(run, 2, ready);        /* termina unit */
-    CHECK(n == 1 && ready[0] == 3);                   /* integ queda lista */
+    n = dag_release_dependents(run, 1, ready);
+    CHECK(n == 1 && ready[0] == 2);
+    n = dag_release_dependents(run, 2, ready);
+    CHECK(n == 1 && ready[0] == 3);
 }
 
 static void test_set_status(run_t *run)

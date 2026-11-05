@@ -5,16 +5,8 @@
 #include "job_context.h"
 
 /*
- * builtin_tasks.h — interface for the four built-in tasks.
- *
- * Each function takes the parsed inputs kv array from the step definition
- * plus the job context (for logging and variable injection) and returns
- * 0 on success, non-zero on failure.
- *
- * Tasks that use OpenMP parallelism (WordCount, Histogram) respect the
- * `threads` input and omp_set_max_active_levels(2) set by the scheduler.
- *
- * Implemented by Persona C (src/tasks/).
+ * Built-in tasks. Each returns 0 on success and non-zero on failure.
+ * WordCount and Histogram respect the `threads` input.
  */
 
 /* Sleep@1  — inputs: seconds (integer string)
@@ -44,7 +36,6 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx);
  */
 int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx);
 
-/* Helper: find a key in a kv array; returns NULL if not found. */
 const char *task_input_get(const kv_t *inputs, size_t n, const char *key);
 
 #endif /* BUILTIN_TASKS_H */

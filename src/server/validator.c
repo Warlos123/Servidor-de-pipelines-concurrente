@@ -7,14 +7,11 @@
 #include <stdlib.h>
 
 
-//VALIDATOR HELPERS
-
 static bool same_name(const char *a, const char *b){
     return a != NULL && b != NULL && strcmp(a, b) == 0;
 }
 
 
-//Index of the stage called 'name'
 static size_t find_stage(const pipeline_t *pipeline, const char *name){
     for(size_t s = 0; s < pipeline->n_stages; s++){
         if(same_name(pipeline->stages[s].name, name))
@@ -25,7 +22,6 @@ static size_t find_stage(const pipeline_t *pipeline, const char *name){
 }
 
 
-//Index of the job called 'name' 
 static size_t find_job(const stage_def_t *stage, const char *name){
     for(size_t j = 0; j < stage->n_jobs; j++){
         if(same_name(stage->jobs[j].name, name))
@@ -35,7 +31,6 @@ static size_t find_job(const stage_def_t *stage, const char *name){
     return NO_INDEX;
 }
 
-//num of stages s depends on 
 static size_t stage_dependency_count(const pipeline_t *pipeline, size_t s){
     const stage_def_t *stage = &pipeline->stages[s];
  
@@ -48,7 +43,6 @@ static size_t stage_dependency_count(const pipeline_t *pipeline, size_t s){
     return 0;
 }
  
-//Index of the i stage that stage s depends on 
 static size_t stage_dependency(const pipeline_t *pipeline, size_t s, size_t i){
     const stage_def_t *stage = &pipeline->stages[s];
  
@@ -59,9 +53,6 @@ static size_t stage_dependency(const pipeline_t *pipeline, size_t s, size_t i){
 }
 
 
-//DUPLICATE NAMES
-
-//Each stage name is compared 
 static void check_duplicate_stages(const pipeline_t *pipeline, error_list_t *errors){
     for(size_t s = 0; s < pipeline->n_stages; s++){
         for(size_t t = 0; t < s; t++){
@@ -74,7 +65,6 @@ static void check_duplicate_stages(const pipeline_t *pipeline, error_list_t *err
 }
 
 
-//Job names only have to be unique inside their own stage.
 static void check_duplicate_jobs(const stage_def_t *stage, size_t s, error_list_t *errors){
     for(size_t j = 0; j < stage->n_jobs; j++){
         for(size_t k = 0; k < j; k++){
@@ -87,8 +77,6 @@ static void check_duplicate_jobs(const stage_def_t *stage, size_t s, error_list_
 }
 
 
-
-//REFERENCES
 
 static void check_stage_references(const pipeline_t *pipeline, size_t s, error_list_t *errors){
     const stage_def_t *stage = &pipeline->stages[s];
@@ -116,14 +104,7 @@ static void check_job_references(const stage_def_t *stage, size_t s, error_list_
 }
 
 
-//CYCLES
-
-/*
-    DFS with:
-    UNVISITED: not reached yet
-    VISITING: on the current path
-    DONE: no cycle
-*/
+/* DFS states: UNVISITED, VISITING (on the current path) and DONE. */
 
 typedef enum {
     UNVISITED,
@@ -149,7 +130,6 @@ static void visit_stage(const pipeline_t *pipeline, size_t s, color_t *colors, e
     for(size_t i = 0; i < n_deps; i++){
         size_t t = stage_dependency(pipeline, s, i);
 
-        //Unknown name
         if(t == NO_INDEX)
             continue;
 
@@ -190,7 +170,6 @@ static void check_stage_cycles(const pipeline_t *pipeline, error_list_t *errors)
     if(pipeline->n_stages == 0)
         return;
 
-    //every stage starts UNVISITED (0).
     color_t *colors = calloc(pipeline->n_stages, sizeof *colors);
 
     if(colors == NULL){
@@ -211,7 +190,6 @@ static void check_job_cycles(const stage_def_t *stage, size_t s, error_list_t *e
     if(stage->n_jobs == 0)
         return;
 
-    //every job starts UNVISITED (0).
     color_t *colors = calloc(stage->n_jobs, sizeof *colors);
 
     if(colors == NULL){
@@ -228,9 +206,6 @@ static void check_job_cycles(const stage_def_t *stage, size_t s, error_list_t *e
 }
 
 
-//ARTIFACTS
-
-//Position of job j of stage s.
 static size_t global_index(const pipeline_t *pipeline, size_t s, size_t j){
     size_t g = 0;
  
@@ -396,8 +371,6 @@ static void check_artifacts(const pipeline_t *pipeline, error_list_t *errors){
     free(reached);
 }
 
-
-//VALIDATOR
 
 void validate_pipeline(const pipeline_t *pipeline, error_list_t *errors){
     check_duplicate_stages(pipeline, errors);

@@ -5,23 +5,13 @@
 #include <stdint.h>
 
 /*
- * artifacts.h — per-run artifact store.
+ * Per-run artifact store.
  *
- * Rules (from Section 6 of the guide):
- *  - Artifact names are unique within a run; two `publish` steps with the
- *    same name are rejected at validation time (before execution).
- *  - `publish <path>  artifact: <name>` copies the directory/file at <path>
- *    (relative to the job workspace) into the artifact store.
- *  - `download <name> path: <dest>` copies a previously published artifact
- *    into <dest> (relative to the job workspace).
- *  - Only an ancestor job may have published the artifact; this is enforced
- *    at validation time by Persona A, so at execution time we just trust the
- *    artifact exists.
+ * Artifact names are unique within a run. Only an ancestor job may have
+ * published an artifact; this is checked during validation, so execution
+ * assumes the artifact exists.
  *
- * The artifact store is a subdirectory under the server's work directory:
- *   <workdir>/artifacts/<run_id>/<artifact_name>/
- *
- * Implemented by Persona C (src/exec/artifacts.c).
+ * Layout: <workdir>/artifacts/<run_id>/<artifact_name>/
  */
 
 typedef struct {

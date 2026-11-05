@@ -2,11 +2,6 @@
 # Client-server integration tests: starts pipelined and drives it with pipectl.
 # Run from the repository root (make test does it): bash tests/test_integration.sh
 
-
-#The following block of code was partially made using: 
-#Anthropic (2026). Claude(Opus 5.5) https://claude.ai
-
-
 SERVER=./bin/pipelined
 CLIENT=./bin/pipectl
 HOST=127.0.0.1
@@ -71,7 +66,6 @@ out_has() { grep -qF -- "$1" "$TMP/out"; }
 out_lines() { wc -l < "$TMP/out"; }
 
 
-# ---------- start the server ----------
 
 # A free-looking port, so the tests don't clash with a server already running.
 PORT=$((20000 + RANDOM % 20000))
@@ -97,7 +91,6 @@ fi
 
 
 
-# ---------- YAML files ----------
 
 cat > "$TMP/invalid.yaml" <<'YAML'
 trigger: main
@@ -152,7 +145,6 @@ stages:
 YAML
 
 
-# ---------- malformed requests ----------
 
 echo "malformed requests"
 
@@ -168,7 +160,6 @@ client STATUS 999
 check "unknown run reason" out_has "run 999 not found"
 
 
-# ---------- invalid pipeline ----------
 
 echo "invalid pipeline"
 
@@ -184,7 +175,6 @@ check "all 4 errors in one answer" [ "$(out_lines)" -eq 4 ]
 
 
 
-# ---------- valid pipeline ----------
 
 echo "valid pipeline"
 
@@ -208,7 +198,6 @@ client LIST
 check "list shows the run" out_has "integration succeeded"
 
 
-# ---------- logs --follow ----------
 
 echo "logs --follow"
 
@@ -220,7 +209,6 @@ check "follow ends when the run ends" [ $? -eq 0 ]
 check "follow received the lines" out_has "second stage"
 
 
-# ---------- cancel ----------
 
 echo "cancel"
 
@@ -236,7 +224,6 @@ check "run is canceled" [ "$(run_status "$SLOW_ID")" = "canceled" ]
 
 
 
-# ---------- agent limit ----------
 
 echo "agent limit"
 
@@ -251,7 +238,6 @@ ELAPSED=$(echo "$END - $START" | bc)
 check "never more jobs than agents (took ${ELAPSED}s)" [ "$(echo "$ELAPSED >= 1.9" | bc)" -eq 1 ]
 
 
-# ---------- concurrent clients ----------
 
 echo "concurrent clients"
 
@@ -274,7 +260,6 @@ done
 check "50 concurrent clients answered ($ANSWERED)" [ "$ANSWERED" -eq 50 ]
 
 
-# ---------- shutdown ----------
 
 echo "shutdown"
 

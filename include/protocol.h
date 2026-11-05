@@ -38,13 +38,11 @@ int protocol_send_response(int file_descriptor, int ok, const char *body);
 int protocol_read_response(int file_descriptor, int *ok, char **body, size_t *len);
 
 
-//THIS METHODS ARE FOR CLIENT
-
-//Reads the file at path and sends the bytes that are in the yaml
+// Reads the file at path and sends its bytes as the YAML body.
 int protocol_send_submit(int file_descriptor, const char *path);
 
-//Reads one response and prints its body (for OK and ERR)
-// 1 = OK, 0 = ERR, -1 = no response
+// Reads one response and prints its body.
+// 1 = OK, 0 = ERR, -1 = no response.
 int protocol_print_response(int file_descriptor, size_t *len);
 
 #endif //PROTOCOL_H

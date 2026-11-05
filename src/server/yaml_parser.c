@@ -13,19 +13,14 @@
 
 #define MESSAGE_MAX 256
 
-//ERROR LIST
 void error_list_add(error_list_t *errors, const char *format, ...){
     char message[MESSAGE_MAX];
 
-    //variable arguments (...) 
     va_list args;
     va_start(args, format);
-    //va_list, writes in string, max size n
     vsnprintf(message, sizeof message, format, args);
     va_end(args);
 
-    //Create new slot in array of messages.
-    //realloc copies an existing block into a new size block with the same content.
     char **items = realloc(errors->items, (errors->count + 1) * sizeof *items);
 
     if(items == NULL)
@@ -53,29 +48,23 @@ void error_list_free(error_list_t *errors){
 
 
 
-//PARSER HELPERS
-
 typedef struct {
     yaml_document_t *document; 
     error_list_t *errors;
 } parser_state_t;
 
-//Turns an id into the node
 static yaml_node_t *get_node(parser_state_t *state, int id){
     return yaml_document_get_node(state->document, id);
 }
 
-//Text of a scalar node
 static const char *text_of(const yaml_node_t *node){
     return (const char *)node->data.scalar.value;
 }
 
-//Adjust count
 static int line_of(const yaml_node_t *node){
     return (int)node->start_mark.line + 1;
 }
 
-//Value of the key name in a mapping ( key : value )
 static yaml_node_t *find_value(parser_state_t *state, const yaml_node_t *mapping, const char *name){
      size_t n_pairs = (size_t)(mapping->data.mapping.pairs.top - mapping->data.mapping.pairs.start);
 
@@ -89,7 +78,6 @@ static yaml_node_t *find_value(parser_state_t *state, const yaml_node_t *mapping
     return NULL;
 }
 
-//Copy text into our memory
 static char *copy_text(parser_state_t *state, const yaml_node_t *node){
     char *copy = strdup(text_of(node));
 
@@ -99,7 +87,6 @@ static char *copy_text(parser_state_t *state, const yaml_node_t *node){
     return copy;
 }
 
-//Allowed keys
 static const char *const PIPELINE_KEYS[] = {"name", "variables", "stages"};
 static const char *const STAGE_KEYS[] = {"stage", "dependsOn", "condition", "jobs"};
 static const char *const JOB_KEYS[] = {"job", "dependsOn", "condition", "timeoutInSeconds", "steps"};
@@ -107,7 +94,6 @@ static const char *const STEP_KEYS[] = {"script", "task", "inputs", "publish", "
 
 #define COUNT_OF(array) (sizeof(array) / sizeof((array)[0]))
 
-//Reports key that is not allowed
 static void check_keys(parser_state_t *state, const yaml_node_t *mapping, const char *const *allowed, size_t n_allowed, const char *level){
     size_t n_pairs = (size_t)(mapping->data.mapping.pairs.top - mapping->data.mapping.pairs.start);
 
@@ -132,7 +118,6 @@ static void check_keys(parser_state_t *state, const yaml_node_t *mapping, const 
 }
 
 
-//Size of list (stages, jobs, steps)
 static size_t list_size(parser_state_t *state, const yaml_node_t *node, const char *key){
     if(node->type != YAML_SEQUENCE_NODE){
         error_list_add(state->errors, "line %d: '%s' must be a list", line_of(node), key);
@@ -147,11 +132,9 @@ static size_t list_size(parser_state_t *state, const yaml_node_t *node, const ch
     return count;
 }
 
-//Required name (stage, job)
 static char *parse_name(parser_state_t *state, const yaml_node_t *mapping, const char *key){
     yaml_node_t *value = find_value(state, mapping, key);
 
-    //Missing key
     if(value == NULL){
         error_list_add(state->errors, "line %d: missing '%s' (the name)", line_of(mapping), key);
         return NULL;
@@ -166,7 +149,6 @@ static char *parse_name(parser_state_t *state, const yaml_node_t *mapping, const
 }
 
 
-//Required text (script, task, publish, artifact, download, path)
 static char *parse_text(parser_state_t *state, const yaml_node_t *value, const char *key){
     if(value->type != YAML_SCALAR_NODE || value->data.scalar.length == 0){
         error_list_add(state->errors, "line %d: '%s' must be a single value", line_of(value), key);
@@ -177,7 +159,6 @@ static char *parse_text(parser_state_t *state, const yaml_node_t *value, const c
 }
 
 
-//Reads a map of name, value (task inputsm, pipeline variables) into an array of kv_t entreis (model.h)
 static void parse_key_value_map(parser_state_t *state, const yaml_node_t *node, const char *key, kv_t **entries, size_t *entry_count){
     if(node->type != YAML_MAPPING_NODE){
         error_list_add(state->errors, "line %d: '%s' must be a map of name: value", line_of(node), key);
@@ -189,7 +170,6 @@ static void parse_key_value_map(parser_state_t *state, const yaml_node_t *node, 
     if(count == 0)
         return;
 
-    //One kv_t per pair
     *entries = calloc(count, sizeof **entries);
 
     if(*entries == NULL){
@@ -203,7 +183,6 @@ static void parse_key_value_map(parser_state_t *state, const yaml_node_t *node, 
         yaml_node_t *name = get_node(state, node->data.mapping.pairs.start[i].key);
         yaml_node_t *value = get_node(state, node->data.mapping.pairs.start[i].value);
 
-        //Each entry must be "name: value"
         if(name->type != YAML_SCALAR_NODE || value->type != YAML_SCALAR_NODE){
             error_list_add(state->errors, "line %d: each entry of '%s' must be name: value", line_of(name), key);
             continue;
@@ -215,9 +194,7 @@ static void parse_key_value_map(parser_state_t *state, const yaml_node_t *node, 
 }
 
 
-//dependsOn: name or list
 static void parse_depends_on(parser_state_t *state, const yaml_node_t *node, char ***names, size_t *count){
-    //A single name:
     if(node->type == YAML_SCALAR_NODE){
         *names = calloc(1, sizeof **names);
 
@@ -236,7 +213,6 @@ static void parse_depends_on(parser_state_t *state, const yaml_node_t *node, cha
         return;
     }
 
-    //A list
     size_t n = (size_t)(node->data.sequence.items.top - node->data.sequence.items.start);
 
     if(n == 0)
@@ -258,7 +234,6 @@ static void parse_depends_on(parser_state_t *state, const yaml_node_t *node, cha
 }
 
 
-//condition: succeeded(), failed(), always()
 static void parse_condition(parser_state_t *state, const yaml_node_t *node, condition_t *condition){
     if(node->type == YAML_SCALAR_NODE && strcmp(text_of(node), "succeeded()") == 0)
         *condition = COND_SUCCEEDED;
@@ -274,7 +249,6 @@ static void parse_condition(parser_state_t *state, const yaml_node_t *node, cond
 }
 
 
-//timeOutInSeconds
 static void parse_timeout(parser_state_t *state, const yaml_node_t *node, int *timeout){
     if(node->type != YAML_SCALAR_NODE){
         error_list_add(state->errors, "line %d: 'timeoutInSeconds' must be a positive integer", line_of(node));
@@ -292,9 +266,7 @@ static void parse_timeout(parser_state_t *state, const yaml_node_t *node, int *t
 
     *timeout = (int)value;
 }
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//Built-in tasks
 typedef struct {
     const char *name;
     const char *required[4];
@@ -308,7 +280,6 @@ static const task_info_t TASKS[] = {
     {"Histogram@1", {"file", "bins", "threads", "output"}, NULL},
 };
 
-//Rejects an unknown task, a missing input or an unknown input before anything runs
 static void check_task(parser_state_t *state, const step_def_t *step){
     const task_info_t *info = NULL;
 
@@ -352,7 +323,6 @@ static void check_task(parser_state_t *state, const step_def_t *step){
 
 
 
-//STEP
 static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_t *step){
     if(node->type != YAML_MAPPING_NODE){
         error_list_add(state->errors, "line %d: each step must be a map (- script: command)", line_of(node));
@@ -392,7 +362,6 @@ static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_
 
 
 
-    ////TASK : Name@1 with its inputs map
     else if(task != NULL){
         step->kind = STEP_TASK;
         step->task = parse_text(state, task, "task");
@@ -407,7 +376,6 @@ static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_
 
 
 
-    //PUBLISH 
     else if(publish != NULL){
         step->kind = STEP_PUBLISH;
         step->path = parse_text(state, publish, "publish");
@@ -421,7 +389,6 @@ static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_
 
 
 
-    //DOWNLOAD
     else {
         step->kind = STEP_DOWNLOAD;
         step->artifact = parse_text(state, download, "download");
@@ -446,7 +413,6 @@ static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_
 }
 
 
-//JOB
 static void parse_job(parser_state_t *state, const yaml_node_t *node, job_def_t *job){
     if(node->type != YAML_MAPPING_NODE){
         error_list_add(state->errors, "line %d: each job must be a map (- job: name)", line_of(node));
@@ -455,7 +421,6 @@ static void parse_job(parser_state_t *state, const yaml_node_t *node, job_def_t 
 
     check_keys(state, node, JOB_KEYS, COUNT_OF(JOB_KEYS), "job");
 
-    //A missing name doesn't stop the job
     job->name = parse_name(state, node, "job");
 
     yaml_node_t *value = find_value(state, node, "dependsOn");
@@ -506,7 +471,6 @@ static void parse_job(parser_state_t *state, const yaml_node_t *node, job_def_t 
 }
 
 
-//STAGE
 static void parse_stage(parser_state_t *state, const yaml_node_t *node, stage_def_t *stage){
     if(node->type != YAML_MAPPING_NODE){
         error_list_add(state->errors, "line %d: each stage must be a map (- stage: name)", line_of(node));
@@ -514,7 +478,6 @@ static void parse_stage(parser_state_t *state, const yaml_node_t *node, stage_de
     }
 
     check_keys(state, node, STAGE_KEYS, COUNT_OF(STAGE_KEYS), "stage");
-    //A missing name doesn't stop the stage
     stage->name = parse_name(state, node, "stage");
 
     yaml_node_t *value = find_value(state, node, "dependsOn");
@@ -560,7 +523,6 @@ static void parse_stage(parser_state_t *state, const yaml_node_t *node, stage_de
 }
 
 
-//PIPELINE
 static void parse_pipeline(parser_state_t *state, const yaml_node_t *root, pipeline_t *pipeline){
     check_keys(state, root, PIPELINE_KEYS, COUNT_OF(PIPELINE_KEYS), "pipeline");
     yaml_node_t *value = find_value(state, root, "name");
@@ -594,7 +556,6 @@ static void parse_pipeline(parser_state_t *state, const yaml_node_t *root, pipel
         return;
     }
 
-    //how many stages
     size_t count = list_size(state, value, "stages");
 
     if(count == 0)
@@ -611,13 +572,12 @@ static void parse_pipeline(parser_state_t *state, const yaml_node_t *root, pipel
 
     for(size_t i = 0; i < count; i++){
         yaml_node_t *stage = get_node(state, value->data.sequence.items.start[i]);
-        parse_stage(state, stage, &pipeline->stages[i]); //CALLS STAGE
+        parse_stage(state, stage, &pipeline->stages[i]);
     }   
 }
 
 
 
-//PARSER 
 pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t *errors){
     yaml_parser_t parser;
     yaml_document_t document; 
@@ -627,12 +587,9 @@ pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t 
         return NULL;
     }
 
-    //reads from the buffer
     yaml_parser_set_input_string(&parser, (const unsigned char *)yaml, yaml_len);
 
-    //Tree of nodes(fails if it's not a valid YAML)
     if(!yaml_parser_load(&parser, &document)){
-        //Say where is the error
         error_list_add(errors, "line %d: invalid YAML: %s", (int)parser.problem_mark.line + 1, parser.problem);
         yaml_parser_delete(&parser);
         return NULL;
@@ -641,17 +598,13 @@ pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t 
     pipeline_t *pipeline = NULL;
     yaml_node_t *root = yaml_document_get_root_node(&document);
 
-    //No root
     if(root == NULL)
         error_list_add(errors, "the YAML is empty");
 
-    //if the root is not a map, then its not a pipeline
     else if(root->type != YAML_MAPPING_NODE)
         error_list_add(errors, "line %d: the pipeline must be a map with 'stages'", (int)root->start_mark.line + 1);
 
-    //valid pipeline
     else{
-        //empty pipeline
         pipeline = calloc(1, sizeof *pipeline);
 
         if(pipeline == NULL)
@@ -659,11 +612,10 @@ pipeline_t *yaml_parse_pipeline(const char *yaml, size_t yaml_len, error_list_t 
 
         else{
             parser_state_t state = {&document, errors};
-            parse_pipeline(&state, root, pipeline); //CALLS PIPELINE
+            parse_pipeline(&state, root, pipeline);
         }
     }
 
-    //Free the tree
     yaml_document_delete(&document);
     yaml_parser_delete(&parser);
     return pipeline;

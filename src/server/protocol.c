@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-//For reading file
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -19,8 +18,8 @@
 
 static int parse_long (const char *text, long *result){
     char *end = NULL;
-    
-    errno = 0; //To clean a previous errno
+
+    errno = 0;
 
     long value = strtol (text, &end, 10);
 
@@ -41,7 +40,6 @@ static int fail(command_t *command, const char *reason){
     return -1;
 }
 
-//Just checks if an id is not negative.
 static int parse_id(const char *text, unsigned long *id){
     long value;
 
@@ -53,7 +51,6 @@ static int parse_id(const char *text, unsigned long *id){
     return 0;
 }
 
-//TURNS A LINE OF TEXT INTO A COMMAND
 int protocol_parse(const char *line, command_t *command){
     memset(command, 0, sizeof *command);
 
@@ -71,13 +68,9 @@ int protocol_parse(const char *line, command_t *command){
         words[count++] = t;
     }
 
-    //FAIL
     if(count == 0)
         return fail(command, "empty command");
-    
 
-
-    //SHUTDOWN OR LIST
     if(strcmp(words[0], "SHUTDOWN") == 0 || strcmp(words[0], "LIST") == 0){
         if(count != 1)
             return fail(command, "command takes no arguments");
@@ -87,7 +80,6 @@ int protocol_parse(const char *line, command_t *command){
     }
     
 
-    //STATUS OR CANCEL
     if(strcmp(words[0], "STATUS") == 0 || strcmp(words[0], "CANCEL") == 0){
 
         if(count != 2)
@@ -102,7 +94,6 @@ int protocol_parse(const char *line, command_t *command){
     }
 
     
-    //SUBMIT 
     if(strcmp(words[0], "SUBMIT") == 0){
         long nbytes;
 
@@ -120,7 +111,6 @@ int protocol_parse(const char *line, command_t *command){
     }
 
 
-    //LOGS
     if(strcmp(words[0], "LOGS") == 0){
 
         if(count < 2 || count > 4)
@@ -131,7 +121,7 @@ int protocol_parse(const char *line, command_t *command){
         
         int next_word = 2;
 
-        if(next_word < count && strcmp(words[next_word], "FOLLOW") != 0){ //Is not follow, is job
+        if(next_word < count && strcmp(words[next_word], "FOLLOW") != 0){
             if(strlen(words[next_word]) >= JOB_NAME_MAX)
                 return fail(command, "job name too long");
 
@@ -140,7 +130,7 @@ int protocol_parse(const char *line, command_t *command){
         }
 
 
-        if(next_word < count){//There is still a word left, has to be FOLLOW
+        if(next_word < count){
             if(strcmp(words[next_word], "FOLLOW") != 0)
                 return fail(command, "expected FOLLOW");
 
@@ -183,14 +173,14 @@ int protocol_send_response(int file_descriptor, int ok, const char *body){
 
 int protocol_read_response(int file_descriptor, int *ok, char **body, size_t *len){
     
-    char line[LINE_MAX_LEN]; //header
+    char line[LINE_MAX_LEN];
 
     if(nu_read_line(file_descriptor, line, sizeof line) < 0)
         return -1;
 
     char *space = strchr(line, ' ');
 
-    if(space == NULL) //No blank space
+    if(space == NULL)
         return -1;
 
     *space = '\0';
@@ -228,12 +218,6 @@ int protocol_read_response(int file_descriptor, int *ok, char **body, size_t *le
 
 
 
-/* 
-The following block of code was partially made using: 
-Anthropic (2026). Claude(Opus 5.5) https://claude.ai
-*/
-
-//CLIENT METHODS
 int protocol_send_submit(int file_descriptor, const char *path){
     int file = open(path, O_RDONLY);
 
@@ -243,8 +227,7 @@ int protocol_send_submit(int file_descriptor, const char *path){
     }
 
     struct stat info;
-    
-    //fstat gives file size
+
     if(fstat(file, &info) < 0){
         perror(path);
         close(file);
