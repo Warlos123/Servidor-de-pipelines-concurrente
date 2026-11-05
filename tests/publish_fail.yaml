@@ -1,0 +1,9 @@
+stages:
+- stage: test
+  jobs:
+  - job: fail_me
+    steps:
+    - publish: file_that_does_not_exist
+      artifact: art
+YAML
+,path:
