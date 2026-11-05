@@ -166,6 +166,7 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     #pragma omp parallel for num_threads(n_threads) schedule(static)
     for (int t = 0; t < n_threads; t++) {
+        if (atomic_load(ctx->cancel_flag)) continue;
         size_t start = 0;
         if (t > 0) {
             start = align_to_word_boundary(data, (size_t)t * chunk, size);
@@ -312,6 +313,7 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     #pragma omp parallel for num_threads(n_threads) schedule(static)
     for (int t = 0; t < n_threads; t++) {
+        if (atomic_load(ctx->cancel_flag)) continue;
         size_t start = (size_t)t * chunk;
         size_t end   = start + chunk;
         if (end > size) end = size;

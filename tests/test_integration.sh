@@ -72,6 +72,21 @@ wait_finished() {
     return 1
 }
 
+# wait_status <id> <status> <seconds>: waits until the run status matches the target status.
+wait_status() {
+    local id=$1
+    local target=$2
+    local timeout=$3
+    local tries=$(($timeout * 10))
+    for ((i = 0; i < tries; i++)); do
+        if [ "$(run_status "$id")" = "$target" ]; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
 out_has() { grep -qF -- "$1" "$TMP/out"; }
 out_lines() { wc -l < "$TMP/out"; }
 
@@ -257,11 +272,10 @@ check "never more jobs than agents (took ${ELAPSED}s)" compare_floats "$ELAPSED"
 echo "publish fail"
 FAIL_ID=$(cat "$TMP/out")
 check "publish fail accepted" [ $? -eq 0 ]
-sleep 1
-check "publish fail run finishes" wait_finished "$FAIL_ID" 10
-check "publish fail run failed" [ "$(run_status "$FAIL_ID")" = "failed" ]
+status=$(run_status "$FAIL_ID"); echo "DEBUG status: $status"
+check "publish fail run failed" [ "$status" = "failed" ]
 client LOGS "$FAIL_ID"
-check "logs have the error" out_has "##[error] publish failed"
+check "logs have the error" out_has "##[error] publish failed."
 
 
 # ---------- cancel data task ----------
@@ -269,11 +283,11 @@ check "logs have the error" out_has "##[error] publish failed"
 echo "cancel data task"
 client SUBMIT "$TMP/cancel_task.yaml"
 CANCEL_ID=$(cat "$TMP/out")
-sleep 1
+# Wait until running
+check "cancel task starts" wait_status "$CANCEL_ID" "running" 5
+client CANCEL "$CANCEL_ID"
 check "cancel accepted" out_has "canceling"
-sleep 1
-check "canceled run finishes quickly" wait_finished "$CANCEL_ID" 5
-check "run is canceled" [ "$(run_status "$CANCEL_ID")" = "canceled" ]
+check "canceled run finishes" wait_status "$CANCEL_ID" "canceled" 5
 
 
 # ---------- concurrent clients ----------
