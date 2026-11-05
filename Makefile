@@ -1,6 +1,6 @@
 CC      = gcc
-CFLAGS  = -std=c2x -Wall -Wextra -pedantic -O2 -pthread -fopenmp -Iinclude
-BUILD   = build
+STD    := $(shell $(CC) -std=c23 -E -x c /dev/null >/dev/null 2>&1 && echo c23 || echo c2x)
+CFLAGS  = -std=$(STD) -Wall -Wextra -pedantic -O2 -pthread -fopenmp -IincludeBUILD   = build
 BIN     = bin
 
 ifeq ($(SIN_PROTECCION),1)
@@ -58,7 +58,8 @@ test: all
 	@echo "Ejecutando suite de pruebas local..."
 	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry && \
 	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol && \
-	$(BIN)/test_determinism && $(BIN)/test_variables
+	$(BIN)/test_determinism && $(BIN)/test_variables && \
+	bash tests/test_integration.sh
 
 # --- Pattern rules for each source directory ---
 

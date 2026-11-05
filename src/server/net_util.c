@@ -11,7 +11,7 @@
 
 int nu_listen(unsigned short port, int backlog)
 {
-    int file_descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    int file_descriptor = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (file_descriptor < 0)
     {
         perror("socket");

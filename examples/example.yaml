@@ -23,7 +23,7 @@ stages:
       path: .
     - task: WordCount@1
       inputs:
-        file: corpus/corpus.txt
+        file: corpus.txt
         threads: 4
         output: words.txt
     - publish: words.txt
@@ -34,7 +34,7 @@ stages:
       path: .
     - task: Histogram@1
       inputs:
-        file: corpus/corpus.txt
+        file: corpus.txt
         bins: 16
         threads: 4
         output: histogram.csv
@@ -47,4 +47,4 @@ stages:
       path: .
     - download: histogram
       path: .
-    - script: cat words/words.txt histogram/histogram.csv
+    - script: cat words.txt histogram.csv

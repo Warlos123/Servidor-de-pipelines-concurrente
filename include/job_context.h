@@ -7,6 +7,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
 
 
 #define VAR_MAP_INITIAL 16  
@@ -32,6 +33,7 @@ typedef struct {
 
   
     int timeout_seconds;
+    struct timespec started;
 } job_context_t;
 
 
@@ -44,5 +46,7 @@ int var_map_set(var_map_t *m, const char *key, const char *value);
 
 
 void var_map_destroy(var_map_t *m);
+
+bool job_timed_out(const job_context_t *ctx);
 
 #endif 

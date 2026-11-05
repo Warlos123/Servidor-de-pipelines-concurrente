@@ -1,6 +1,6 @@
 # Concurrent pipeline server
 
-CI-0117 Parallel and Concurrent Programming project. `pipelined` receives pipelines written in YAML, validates them and runs them concurrently on a limited number of agents. `pipectl` is the command-line client.
+`pipelined` receives pipelines written in YAML, validates them and runs them concurrently on a limited number of agents. `pipectl` is the command-line client.
 
 ## Setup
 

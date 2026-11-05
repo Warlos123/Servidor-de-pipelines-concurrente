@@ -294,6 +294,63 @@ static void parse_timeout(parser_state_t *state, const yaml_node_t *node, int *t
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+//Built-in tasks
+typedef struct {
+    const char *name;
+    const char *required[4];
+    const char *optional;
+} task_info_t;
+
+static const task_info_t TASKS[] = {
+    {"Sleep@1", {"seconds"}, NULL},
+    {"Cpu@1", {"iterations", "seed"}, NULL},
+    {"WordCount@1", {"file", "threads", "output"}, "top"},
+    {"Histogram@1", {"file", "bins", "threads", "output"}, NULL},
+};
+
+//Rejects an unknown task, a missing input or an unknown input before anything runs
+static void check_task(parser_state_t *state, const step_def_t *step){
+    const task_info_t *info = NULL;
+
+    for(size_t i = 0; i < COUNT_OF(TASKS); i++){
+        if(strcmp(step->task, TASKS[i].name) == 0)
+            info = &TASKS[i];
+    }
+
+    if(info == NULL){
+        error_list_add(state->errors, "line %d: unknown task '%s' (Sleep@1, Cpu@1, WordCount@1 or Histogram@1)", step->line, step->task);
+        return;
+    }
+
+    for(size_t r = 0; r < 4 && info->required[r] != NULL; r++){
+        bool found = false;
+
+        for(size_t i = 0; i < step->n_inputs; i++){
+            if(strcmp(step->inputs[i].key, info->required[r]) == 0)
+                found = true;
+        }
+
+        if(!found)
+            error_list_add(state->errors, "line %d: task '%s' needs input '%s'", step->line, info->name, info->required[r]);
+    }
+
+    for(size_t i = 0; i < step->n_inputs; i++){
+        const char *key = step->inputs[i].key;
+        bool known = info->optional != NULL && strcmp(key, info->optional) == 0;
+
+        for(size_t r = 0; r < 4 && info->required[r] != NULL; r++){
+            if(strcmp(key, info->required[r]) == 0)
+                known = true;
+        }
+
+        if(!known)
+            error_list_add(state->errors, "line %d: unknown input '%s' for task '%s'", step->line, key, info->name);
+    }
+}
+
+
+
+
 
 //STEP
 static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_t *step){
@@ -343,6 +400,9 @@ static void parse_step(parser_state_t *state, const yaml_node_t *node, step_def_
 
         if(value != NULL)
             parse_key_value_map(state, value, "inputs", &step->inputs, &step->n_inputs);
+
+        if(step->task != NULL)
+            check_task(state, step);
     }
 
 

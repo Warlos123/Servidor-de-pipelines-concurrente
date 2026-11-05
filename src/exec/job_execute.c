@@ -23,6 +23,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <poll.h>
 
 
 const char *var_map_get(const var_map_t *m, const char *key)
@@ -104,19 +105,21 @@ static char *expand_vars(const char *src, const var_map_t *vars)
                     memcpy(name, src + i + 2, name_len);
                     name[name_len] = '\0';
                     const char *val = var_map_get(vars, name);
-                    if (val == NULL) val = ""; /* unknown variable = empty */
-                    size_t vlen = strlen(val);
-                    
-                    while (used + vlen >= cap) {
-                        cap *= 2;
-                        char *tmp = realloc(out, cap);
-                        if (tmp == NULL) { free(out); return NULL; }
-                        out = tmp;
+                    // An unknown name is left as it is, so the shell still gets its $(command)
+                    if (val != NULL) {
+                        size_t vlen = strlen(val);
+                        /* Grow output buffer if needed */
+                        while (used + vlen >= cap) {
+                            cap *= 2;
+                            char *tmp = realloc(out, cap);
+                            if (tmp == NULL) { free(out); return NULL; }
+                            out = tmp;
+                        }
+                        memcpy(out + used, val, vlen);
+                        used += vlen;
+                        i = j + 1;
+                        continue;
                     }
-                    memcpy(out + used, val, vlen);
-                    used += vlen;
-                    i = j + 1;
-                    continue;
                 }
             }
         }
@@ -167,6 +170,25 @@ static char *make_workspace(const char *workdir, uint64_t run_id,
 }
 
 
+
+#define POLL_MS      100  //longest wait between cancel/timeout 
+#define EXIT_POLL_MS 10   
+
+
+
+
+bool job_timed_out(const job_context_t *ctx)
+{
+    if (ctx->timeout_seconds <= 0) {
+        return false;
+    }
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double elapsed = (double)(now.tv_sec - ctx->started.tv_sec) + (double)(now.tv_nsec - ctx->started.tv_nsec) / 1e9;
+    return elapsed >= (double)ctx->timeout_seconds;
+}
+
+
 #define READ_END  0
 #define WRITE_END 1
 
@@ -180,14 +202,8 @@ static int spawn_script(const char *cmd, const char *workspace,
                          child_t *out_child)
 {
     int pipefd[2];
-    if (pipe(pipefd) < 0) return -1;
-
-    
-    if (fcntl(pipefd[WRITE_END], F_SETFD, FD_CLOEXEC) < 0) {
-        close(pipefd[READ_END]);
-        close(pipefd[WRITE_END]);
+    if (pipe2(pipefd, O_CLOEXEC) < 0) 
         return -1;
-    }
 
     posix_spawn_file_actions_t fa;
     posix_spawnattr_t          attr;
@@ -227,146 +243,113 @@ static int spawn_script(const char *cmd, const char *workspace,
     return 0;
 }
 
+
+//Kills the script and everything it started
 static void kill_child(const child_t *child)
 {
-    killpg(child->pgid, SIGTERM);
-    struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
-    nanosleep(&ts, NULL);
     killpg(child->pgid, SIGKILL);
 }
 
 
-static int drain_and_wait(child_t *child, job_context_t *ctx,
-                          int timeout_seconds)
+//Logs one line of the child's output and applies it if it is ##setvariable NAME=value
+static void handle_line(job_context_t *ctx, char *line)
 {
-    char   line_buf[4096];
-    size_t line_used = 0;
-    char   read_buf[1024];
-    ssize_t n;
+    log_append(ctx->log, line);
 
-    /* Track start time for timeout */
-    struct timespec t_start;
-    clock_gettime(CLOCK_MONOTONIC, &t_start);
+    if (strncmp(line, "##setvariable ", 14) != 0) {
+        return;
+    }
 
-    /* Set pipe non-blocking so we can poll */
-    int flags = fcntl(child->pipe_fd, F_GETFL, 0);
-    fcntl(child->pipe_fd, F_SETFL, flags | O_NONBLOCK);
+    char *eq = strchr(line + 14, '=');
 
-    for (;;) {
-        /* Check cancellation */
-        if (atomic_load(ctx->cancel_flag)) {
+    if (eq == NULL) {
+        return;
+    }
+    *eq = '\0';
+
+
+    char *value = eq + 1;
+    size_t len = strlen(value);
+    while (len > 0 && (value[len - 1] == '\n' || value[len - 1] == '\r')) {
+        len--;
+        value[len] = '\0';
+    }
+    var_map_set(&ctx->vars, line + 14, value);
+}
+
+
+static int drain_and_wait(child_t *child, job_context_t *ctx)
+{
+    char   line[4096];
+    size_t used = 0;
+    char   buffer[1024];
+
+    bool eof = false; // every writer of the pipe is gone
+    bool exited = false; // the shell process was reaped
+    bool stopped = false; // canceled or timed out: the group was killed
+    int  status = 0;
+
+    while (!eof || !exited) {
+        int ready = 0;
+        if (!eof) {
+            struct pollfd pfd = { .fd = child->pipe_fd, .events = POLLIN };
+            ready = poll(&pfd, 1, POLL_MS);
+        } 
+        
+        else {
+            //Only waiting for the shell to exit 
+            poll(NULL, 0, EXIT_POLL_MS);
+        }
+
+        if (!stopped && atomic_load(ctx->cancel_flag)) {
             kill_child(child);
-            break;
+            stopped = true;
         }
 
-        /* Check timeout */
-        if (timeout_seconds > 0) {
-            struct timespec t_now;
-            clock_gettime(CLOCK_MONOTONIC, &t_now);
-            long elapsed = (long)(t_now.tv_sec - t_start.tv_sec);
-            if (elapsed >= timeout_seconds) {
-                log_append(ctx->log, "##[error] Timeout exceeded.");
-                kill_child(child);
-                break;
-            }
+        if (!stopped && job_timed_out(ctx)) {
+            log_append(ctx->log, "##[error] Timeout exceeded.");
+            kill_child(child);
+            stopped = true;
         }
 
-        n = read(child->pipe_fd, read_buf, sizeof read_buf - 1);
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                /* No data yet; check if child finished */
-                int status;
-                pid_t w = waitpid(child->pid, &status, WNOHANG);
-                if (w == child->pid) {
-                    /* Drain remaining bytes */
-                    fcntl(child->pipe_fd, F_SETFL, flags & ~O_NONBLOCK);
-                    while ((n = read(child->pipe_fd, read_buf,
-                                     sizeof read_buf - 1)) > 0) {
-                        read_buf[n] = '\0';
-                        /* Process line by line */
-                        for (ssize_t i = 0; i < n; i++) {
-                            char c = read_buf[i];
-                            if (line_used < sizeof line_buf - 1) {
-                                line_buf[line_used++] = c;
-                            }
-                            if (c == '\n' || line_used == sizeof line_buf - 1) {
-                                line_buf[line_used] = '\0';
-                                log_append(ctx->log, line_buf);
-                                /* Check for ##setvariable */
-                                if (strncmp(line_buf, "##setvariable ", 14) == 0) {
-                                    char *eq = strchr(line_buf + 14, '=');
-                                    if (eq != NULL) {
-                                        *eq = '\0';
-                                        var_map_set(&ctx->vars,
-                                                    line_buf + 14, eq + 1);
-                                    }
-                                }
-                                line_used = 0;
-                            }
-                        }
-                    }
-                    if (line_used > 0) {
-                        line_buf[line_used] = '\0';
-                        log_append(ctx->log, line_buf);
-                        line_used = 0;
-                    }
-                    close(child->pipe_fd);
-                    return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
-                }
-                
-                struct timespec ts = {0, 10000000L}; 
-                nanosleep(&ts, NULL);
-                continue;
-            }
-            break; 
-        }
-        if (n == 0) {
-           
-            break;
-        }
-
-        read_buf[n] = '\0';
-        for (ssize_t i = 0; i < n; i++) {
-            char c = read_buf[i];
-            if (line_used < sizeof line_buf - 1) {
-                line_buf[line_used++] = c;
-            }
-            if (c == '\n' || line_used == sizeof line_buf - 1) {
-                line_buf[line_used] = '\0';
-                log_append(ctx->log, line_buf);
-               
-                if (strncmp(line_buf, "##setvariable ", 14) == 0) {
-                    char *eq = strchr(line_buf + 14, '=');
-                    if (eq != NULL) {
-                        *eq = '\0';
-                        
-                        char *key = line_buf + 14;
-                        char *val = eq + 1;
-                        
-                        size_t vl = strlen(val);
-                        while (vl > 0 && (val[vl - 1] == '\n' ||
-                                          val[vl - 1] == '\r')) {
-                            val[--vl] = '\0';
-                        }
-                        var_map_set(&ctx->vars, key, val);
+        if (ready > 0) {
+            ssize_t n = read(child->pipe_fd, buffer, sizeof buffer);
+            if (n > 0) {
+                for (ssize_t i = 0; i < n; i++) {
+                    line[used] = buffer[i];
+                    used++;
+                    if (buffer[i] == '\n' || used == sizeof line - 1) {
+                        line[used] = '\0';
+                        handle_line(ctx, line);
+                        used = 0;
                     }
                 }
-                line_used = 0;
+            } 
+            
+            else if (n == 0 || errno != EINTR) {
+                eof = true;
             }
+        }
+
+        if (!exited && waitpid(child->pid, &status, WNOHANG) == child->pid) {
+            exited = true;
+            //Processes the script left in the background would keep the pipe open
+            killpg(child->pgid, SIGKILL);
         }
     }
 
-   
-    if (line_used > 0) {
-        line_buf[line_used] = '\0';
-        log_append(ctx->log, line_buf);
+    if (used > 0) {
+        line[used] = '\0';
+        handle_line(ctx, line);
     }
 
     close(child->pipe_fd);
 
-    int status;
-    waitpid(child->pid, &status, 0);
-    return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+    if (stopped || !WIFEXITED(status)) {
+        return 1;
+    }
+
+    return WEXITSTATUS(status);
 }
 
 static int run_step(const step_def_t *step, job_context_t *ctx,
@@ -389,27 +372,51 @@ static int run_step(const step_def_t *step, job_context_t *ctx,
             log_append(ctx->log, "##[error] Failed to spawn child process.");
             return -1;
         }
-        return drain_and_wait(&child, ctx, ctx->timeout_seconds);
+        return drain_and_wait(&child, ctx);
     }
 
     case STEP_TASK: {
         
         const char *task = step->task;
+
+        //Copy of the inputs with $(NAME) replaced in every value
+        size_t n_inputs = step->n_inputs;
+        kv_t *inputs = calloc(n_inputs + 1, sizeof *inputs);
+        if (inputs == NULL) return -1;
+        for (size_t i = 0; i < n_inputs; i++) {
+            inputs[i].key = step->inputs[i].key;
+            inputs[i].value = expand_vars(step->inputs[i].value, &ctx->vars);
+        }
+
         int rc;
         if (strncmp(task, "Sleep@", 6) == 0) {
-            rc = task_sleep(step->inputs, step->n_inputs, ctx);
-        } else if (strncmp(task, "Cpu@", 4) == 0) {
-            rc = task_cpu(step->inputs, step->n_inputs, ctx);
-        } else if (strncmp(task, "WordCount@", 10) == 0) {
-            rc = task_wordcount(step->inputs, step->n_inputs, ctx);
-        } else if (strncmp(task, "Histogram@", 10) == 0) {
-            rc = task_histogram(step->inputs, step->n_inputs, ctx);
-        } else {
+            rc = task_sleep(inputs, n_inputs, ctx);
+        } 
+        
+        else if (strncmp(task, "Cpu@", 4) == 0) {
+            rc = task_cpu(inputs, n_inputs, ctx);
+        } 
+        
+        else if (strncmp(task, "WordCount@", 10) == 0) {
+            rc = task_wordcount(inputs, n_inputs, ctx);
+        } 
+        
+        else if (strncmp(task, "Histogram@", 10) == 0) {
+            rc = task_histogram(inputs, n_inputs, ctx);
+        } 
+        
+        else {
             char msg[128];
             snprintf(msg, sizeof msg, "##[error] Unknown task: %s", task);
             log_append(ctx->log, msg);
             rc = -1;
         }
+
+        //The keys belong to the step
+        for (size_t i = 0; i < n_inputs; i++) {
+            free(inputs[i].value);
+        }
+        free(inputs);
         return rc;
     }
 
@@ -460,8 +467,9 @@ static void inherit_vars(job_context_t *ctx, const run_t *run, size_t job_idx)
     }
 
 
-    if (run->n_jobs > 1024) return; /* safety guard */
-    bool is_ancestor[1024] = {false};
+    //One flag per job of the run, so there is no limit on how many jobs it has
+    bool *is_ancestor = calloc(run->n_jobs, sizeof *is_ancestor);
+    if (is_ancestor == NULL) return;
 
     
     const job_rt_t *this_job = &run->jobs[job_idx];
@@ -493,6 +501,25 @@ static void inherit_vars(job_context_t *ctx, const run_t *run, size_t job_idx)
             var_map_set(&ctx->vars, exported->entries[i].key, exported->entries[i].value);
         }
     }
+
+    free(is_ancestor);
+}
+
+
+
+// Updates a step under the run lock, the same lock STATUS holds while it reads the run
+static void set_step_status(run_t *run, step_rt_t *step, status_t status)
+{
+    omp_set_lock(&run->lock);
+    if (status == ST_RUNNING) {
+        clock_gettime(CLOCK_MONOTONIC, &step->start);
+    } 
+    
+    else {
+        clock_gettime(CLOCK_MONOTONIC, &step->end);
+    }
+    step->status = status;
+    omp_unset_lock(&run->lock);
 }
 
 
@@ -508,6 +535,7 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
     ctx.job_index      = job_idx;
     ctx.cancel_flag    = &run->cancel_requested;
     ctx.timeout_seconds = job_def->timeout_seconds;
+    clock_gettime(CLOCK_MONOTONIC, &ctx.started);
 
     
     job_log_t *log = &run->jobs[job_idx].log;
@@ -551,14 +579,31 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
             break;
         }
 
+        //timeoutInSeconds covers the whole job, not each step
+        if (job_timed_out(&ctx)) {
+            log_append(log, "##[error] Timeout exceeded.");
+            any_failed = true;
+            break;
+        }
+
         const step_def_t *step = &job_def->steps[s];
 
-        /* Record step start time */
-        clock_gettime(CLOCK_REALTIME, &job_rt->steps[s].start);
-        job_set_status(run, job_idx, ST_RUNNING); 
+        step_rt_t *step_rt = &job_rt->steps[s];
+        set_step_status(run, step_rt, ST_RUNNING);
+
         int rc = run_step(step, &ctx, &arts);
 
-        clock_gettime(CLOCK_REALTIME, &job_rt->steps[s].end);
+        //A step that fails because the run was canceled ends as canceled, not failed
+        status_t step_final = ST_SUCCEEDED;
+        if (rc != 0) {
+            step_final = ST_FAILED;
+            if (atomic_load(&run->cancel_requested)) {
+                step_final = ST_CANCELED;
+            }
+        }
+
+
+        set_step_status(run, step_rt, step_final);
 
         if (rc != 0) {
             if (step->continue_on_error) {
