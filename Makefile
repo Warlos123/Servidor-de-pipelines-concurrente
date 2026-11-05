@@ -18,7 +18,8 @@ OBJS_TASKS  = $(BUILD)/task_sleep_cpu.o $(BUILD)/task_data.o
 
 ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \
 $(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_registry \
-$(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol
+$(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol \
+$(BIN)/test_determinism
 
 all: $(ALL_BINS)
 
@@ -53,8 +54,9 @@ $(BIN)/test_protocol: $(BUILD)/test_protocol.o $(OBJS_NET) | $(BIN)
 test: all
 	@echo "Ejecutando suite de pruebas local..."
 	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry && \
-	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_determinism
-	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol
+	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol && \
+	$(BIN)/test_determinism && \
+	bash tests/test_integration.sh
 
 # --- Pattern rules for each source directory ---
 

@@ -1,0 +1,50 @@
+# Example from the project statement
+# Run: pipectl <host> <port> submit examples/example.yaml
+name: example
+stages:
+- stage: preparar
+  jobs:
+  - job: descargar
+    steps:
+    - script: seq 1 20000 | sed 's/$/ the quick brown fox jumps over the lazy dog/' > corpus.txt
+    - publish: corpus.txt
+      artifact: corpus
+  - job: calentar
+    steps:
+    - task: Sleep@1
+      inputs:
+        seconds: 2
+- stage: analizar
+  dependsOn: preparar
+  jobs:
+  - job: contar
+    steps:
+    - download: corpus
+      path: .
+    - task: WordCount@1
+      inputs:
+        file: corpus/corpus.txt
+        threads: 4
+        output: words.txt
+    - publish: words.txt
+      artifact: words
+  - job: histograma
+    steps:
+    - download: corpus
+      path: .
+    - task: Histogram@1
+      inputs:
+        file: corpus/corpus.txt
+        bins: 16
+        threads: 4
+        output: histogram.csv
+    - publish: histogram.csv
+      artifact: histogram
+  - job: reporte
+    dependsOn: [contar, histograma]
+    steps:
+    - download: words
+      path: .
+    - download: histogram
+      path: .
+    - script: cat words/words.txt histogram/histogram.csv

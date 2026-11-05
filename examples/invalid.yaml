@@ -1,0 +1,40 @@
+# Invalid on purpose: the server rejects it before running anything and returns every error.
+# Run: pipectl <host> <port> submit examples/invalid.yaml
+name: invalid
+trigger: main
+stages:
+- stage: build
+  jobs:
+  - job: compile
+    timeoutInSeconds: soon
+    steps:
+    - script: echo compiling > app.txt
+    - publish: app.txt
+      artifact: app
+  - job: compile
+    steps:
+    - script: echo again
+- stage: test
+  dependsOn: biuld
+  jobs:
+  - job: unit
+    dependsOn: lint
+    steps:
+    - download: app
+      path: .
+  - job: lint
+    dependsOn: unit
+    steps:
+    - script: echo lint
+  - job: race
+    steps:
+    - download: app
+      path: .
+    - publish: app.txt
+      artifact: app
+- stage: build
+  jobs:
+  - job: deploy
+    condition: sometimes()
+    steps:
+    - script: echo deploy
