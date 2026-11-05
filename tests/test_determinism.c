@@ -64,7 +64,7 @@ static void reset_counts(counter_ctx_t *ctx){
     }
 }
 
-/* ---------- Race test: many jobs release the same dependents at once ---------- */
+
 
 static status_t counting_runner(run_t *run, size_t job, void *arg){
     (void)run;
@@ -134,7 +134,7 @@ static void test_each_job_runs_once(void){
     scheduler_stop(&scheduler);
 }
 
-/* ---------- Determinism test: same result for any thread schedule ---------- */
+
 
 static status_t random_runner(run_t *run, size_t job, void *arg){
     counter_ctx_t *ctx = arg;

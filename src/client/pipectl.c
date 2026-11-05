@@ -10,17 +10,8 @@
 #include <unistd.h>
 
 
-//pipectl <host> <port> <command...> [arguments]
-
-
 int main(int argc, char **argv) 
 {
-    /*argv[0] = program name
-      argv[1] = host
-      argv[2] = port
-      argv[3...] = command
-    */
-
     if (argc < 4){
         fprintf(stderr, "usage: %s <host> <port> <command...>\n", argv[0]);
         return EXIT_FAILURE;
@@ -31,14 +22,12 @@ int main(int argc, char **argv)
     errno = 0;
     long port = strtol(argv[2], &tail, 10);
 
-       //verification for invalid ports
     if (errno != 0 || tail == argv[2] || *tail != '\0' || port <= 0 || port > 65535){
         fprintf(stderr, "invalid port '%s'\n", argv[2]);
         return EXIT_FAILURE;
     }
 
 
-    //SUBMIT (file path)
     int submit = strcmp(argv[3], "SUBMIT") == 0;
 
     if(submit && argc != 5){
@@ -54,8 +43,6 @@ int main(int argc, char **argv)
     if(!submit){
         for (int i = 3; i < argc; ++i){
 
-            //use snprintf to send request text to socket.
-                            //writes in       //available storage          //if(i>3)->blank space
             int w = snprintf(request + used, sizeof request - used, "%s%s", (i > 3) ? " " : "", argv[i]);
 
 
@@ -71,7 +58,6 @@ int main(int argc, char **argv)
 
 
 
-    //LOGS FOLLOW 
     int follow = strcmp(argv[argc - 1], "FOLLOW") == 0;
     
     int file_descriptor = nu_connect(argv[1], (unsigned short)port);
@@ -99,7 +85,7 @@ int main(int argc, char **argv)
 
     do{
         result = protocol_print_response(file_descriptor, &len);
-    } while (follow && result == 1 && len > 0); //Always reads a response, even if its not follow. If its follow send until OK 0, ERR or connection closed.
+    } while (follow && result == 1 && len > 0);
 
 
     close(file_descriptor);

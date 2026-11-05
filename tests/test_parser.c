@@ -19,7 +19,6 @@ static int g_checks = 0;
     } while (0)
 
 
-//Parses text and returns the pipeline
 static pipeline_t *parse(const char *text, error_list_t *errors){
     pipeline_t *pipeline = yaml_parse_pipeline(text, strlen(text), errors);
 
@@ -56,12 +55,6 @@ static void expect_error(const char *text, const char *piece){
     pipeline_free(pipeline);
     error_list_free(&errors);
 }
-
-/* 
-The following block of code was partially made using: 
-Anthropic (2026). Claude(Opus 5.5) https://claude.ai
-*/
-
 
 static void test_loading(void){
     printf("loading the YAML\n");
@@ -128,7 +121,6 @@ static void test_valid_pipeline(void){
     CHECK(pipeline->n_variables == 1 && strcmp(pipeline->variables[0].key, "CONFIG") == 0);
     CHECK(pipeline->n_stages == 3);
 
-    //Stage build: no dependsOn (depends on nothing, it is the first one).
     stage_def_t *build = &pipeline->stages[0];
     CHECK(strcmp(build->name, "build") == 0);
     CHECK(build->has_depends_on == false);
@@ -171,7 +163,6 @@ static void test_valid_pipeline(void){
 
 
 
-//STRUCTURE ERRORS
 static void test_structure_errors(void){
     printf("structure errors\n");
 
@@ -187,7 +178,6 @@ static void test_structure_errors(void){
 
 
 
-//STEP AND VALUE ERRORS
 static void test_value_errors(void){
     printf("step and value errors\n");
     const char *start = "stages:\n- stage: a\n  jobs:\n  - job: j\n";
@@ -217,7 +207,6 @@ static void test_value_errors(void){
 
 
 
-//UNKNOWN KEYS
 static void test_unknown_keys(void){
     printf("unknown keys\n");
     const char *text =
@@ -240,7 +229,6 @@ static void test_unknown_keys(void){
 
 
 
-//DUPLICATES AND REFERENCES
 static void test_duplicates_and_references(void){
     printf("duplicate names and unknown references\n");
     const char *text =
@@ -266,7 +254,6 @@ static void test_duplicates_and_references(void){
 }
 
 
-//CYCLES
 static void test_cycles(void){
     printf("dependency cycles\n");
 
@@ -307,8 +294,6 @@ static void test_cycles(void){
 }
 
 
-
-//ARTIFACTS
 
 static void test_artifacts(void){
     printf("artifacts\n");
@@ -355,7 +340,6 @@ static void test_artifacts(void){
         "  - {job: b, steps: [{download: app}]}\n",
         "published by job 'a', which doesn't always finish before this step");
 
-    //dependsOn: [] makes the stage start right away, so it doesn't wait for build.
     expect_error(
         "stages:\n"
         "- {stage: build, jobs: [{job: a, steps: [{publish: x, artifact: app}]}]}\n"
@@ -372,7 +356,6 @@ static void test_artifacts(void){
 }
 
 
-//ALL THE ERRORS AT ONCE
 static void test_all_errors_reported(void){
     printf("parser and validator errors in one answer\n");
     error_list_t errors = {0};

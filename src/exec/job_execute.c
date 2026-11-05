@@ -108,7 +108,6 @@ static char *expand_vars(const char *src, const var_map_t *vars)
                     // An unknown name is left as it is, so the shell still gets its $(command)
                     if (val != NULL) {
                         size_t vlen = strlen(val);
-                        /* Grow output buffer if needed */
                         while (used + vlen >= cap) {
                             cap *= 2;
                             char *tmp = realloc(out, cap);
@@ -297,7 +296,6 @@ static int drain_and_wait(child_t *child, job_context_t *ctx)
         } 
         
         else {
-            //Only waiting for the shell to exit 
             poll(NULL, 0, EXIT_POLL_MS);
         }
 
@@ -467,7 +465,6 @@ static void inherit_vars(job_context_t *ctx, const run_t *run, size_t job_idx)
     }
 
 
-    //One flag per job of the run, so there is no limit on how many jobs it has
     bool *is_ancestor = calloc(run->n_jobs, sizeof *is_ancestor);
     if (is_ancestor == NULL) return;
 
@@ -579,7 +576,7 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
             break;
         }
 
-        //timeoutInSeconds covers the whole job, not each step
+        //per-job, not per-step
         if (job_timed_out(&ctx)) {
             log_append(log, "##[error] Timeout exceeded.");
             any_failed = true;
@@ -639,7 +636,6 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
     }
     var_map_destroy(&inherited);
 
-    /* ---- Cleanup ---- */
     log_close(log);
     artifact_store_destroy(&arts);
     var_map_destroy(&ctx.vars);

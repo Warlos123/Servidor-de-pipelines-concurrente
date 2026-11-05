@@ -55,10 +55,10 @@ int nu_write_all(int file_descriptor, const void* buffer, size_t size)
     size_t sent = 0;
 
     while (sent < size) {
-        ssize_t n = send(file_descriptor, p + sent, size - sent, MSG_NOSIGNAL); //use send so server wont shutdown with SIGPIPE
+        ssize_t n = send(file_descriptor, p + sent, size - sent, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR)
-                continue;          /* interrupted by a signal: retry */
+                continue;
             perror("write");
             return -1;
         }

@@ -1,4 +1,4 @@
-#define _GNU_SOURCE //accept 4
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
 #include "net_util.h"
@@ -30,17 +30,18 @@
 #define READ_TIMEOUT_SECONDS 5 
 
 #ifndef MAX_ACTIVE_THREADS
-#define MAX_ACTIVE_THREADS 32 //K handlers active 
+#define MAX_ACTIVE_THREADS 32
 #endif
 
 static volatile sig_atomic_t g_running = 1;
 static int listen_file_descriptor = -1;
 
-static sem_t g_counting_sem; //counting semaphore | K permissions, used by handlers
+// Limits how many connection handlers can run at once.
+static sem_t g_counting_sem;
 
-static scheduler_t g_scheduler; //global job queue + agents
+static scheduler_t g_scheduler;
 
-static registry_t g_registry; //every run the server knows
+static registry_t g_registry;
 
 
 scheduler_t *server_scheduler(void){
@@ -69,7 +70,7 @@ int server_is_running(void){
 
 void server_request_shutdown(void){
     g_running = 0;
-    shutdown(listen_file_descriptor, SHUT_RD); //close socket reading
+    shutdown(listen_file_descriptor, SHUT_RD);
 }
 
 static int install_signal_handlers(void)
@@ -79,8 +80,6 @@ static int install_signal_handlers(void)
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = on_sigint;
 
-    //sigaction(int signum, const struct sigaction *act struct sigaction *oldact)
-    //SIGINT = the signal that Ctrl-C sends.
     if (sigaction(SIGINT, &sa, NULL) < 0)
     {
         perror("sigaction");
@@ -101,9 +100,7 @@ static int install_signal_handlers(void)
 
 
 static void sem_wait_retry(sem_t *s){
-    //while thread is interrupted, with sem_wait, if it doesnt have the semaphore to continue, retry and wait until it gets the semaphore.
     while (sem_wait(s) < 0 && errno == EINTR){}
-    //sem_wait() sub 1 to the value of the semaphore, if value is 0, thread sleeps.
 }
 
 
@@ -111,7 +108,6 @@ static void sem_wait_retry(sem_t *s){
 static void server_command(int file_descriptor, const command_t *command){
     char *yaml = NULL;
 
-    //SUBMIT
     if(command->type == C_SUBMIT){
         yaml = malloc(command->body_len + 1);
 
@@ -129,7 +125,6 @@ static void server_command(int file_descriptor, const command_t *command){
         yaml[command->body_len] = '\0';
     }
 
-    //LOGS [FOLLOW]
     if(command->type == C_LOGS){
         command_logs(command, file_descriptor);        
         return;
@@ -154,10 +149,8 @@ static void server_command(int file_descriptor, const command_t *command){
         body = bigger;
         body[0] = '\0';
 
-        //returns 1 = OK, 0 = ERR
         succeeded = command_execute(command, yaml, command->body_len, body, size);
 
-        //It fit
         if(strlen(body) < size - 1 || size >= MAX_RESPONSE_BYTES)
             break;
 
@@ -172,7 +165,7 @@ static void server_command(int file_descriptor, const command_t *command){
 
 static void *handle_connection(void *arg)
 {
-    connection_t *conn = arg; //thread
+    connection_t *conn = arg;
     char line[LINE_MAX_LEN];
 
     //A client that connects and sends nothing can't keep this handler blocked forever
@@ -188,7 +181,6 @@ static void *handle_connection(void *arg)
         if (protocol_parse(line, &command) < 0)
             (void)protocol_send_response(conn->file_descriptor, 0, command.error);
 
-        //EXECUTE COMMAND
         else
             server_command(conn->file_descriptor, &command);
 
@@ -278,7 +270,6 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    //AGENT POOL: one OpenMP thread per agent.
     if(scheduler_start(&g_scheduler, agents, execute_job, (void *)work_directory) < 0){
         fprintf(stderr, "ERROR: can't start scheduler\n");
         registry_destroy(&g_registry);
@@ -316,7 +307,6 @@ int main(int argc, char **argv)
         }
         
         
-                                    //accept(int socket, struct sockaddr *address, socklen_t *address_len)
         int client_file_descriptor = accept4(listen_file_descriptor, NULL, NULL, SOCK_CLOEXEC);
         if (client_file_descriptor < 0)
         {
@@ -326,7 +316,7 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            if(!g_running) //SHUTDOWN requested, leave
+            if(!g_running)
             {
                 break;
             }

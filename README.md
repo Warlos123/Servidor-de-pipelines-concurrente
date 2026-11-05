@@ -43,7 +43,7 @@ Building the project:
 
 The `examples/` folder has pipelines ready to submit:
 
-- `example.yaml`: the example from the project statement (two stages, artifacts, WordCount and Histogram).
+- `example.yaml`: two stages with artifacts, WordCount and Histogram.
     - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/example.yaml`
 - `invalid.yaml`: invalid on purpose; the server rejects it and returns every error.
     - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/invalid.yaml`

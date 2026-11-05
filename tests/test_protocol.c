@@ -22,7 +22,6 @@ static int g_checks = 0;
     } while (0)
 
 
-//Parses line and checks that it is rejected with the given reason.
 static void expect_invalid(const char *line, const char *reason){
     command_t command;
 
@@ -34,8 +33,6 @@ static void expect_invalid(const char *line, const char *reason){
         printf("    \"%s\": expected \"%s\", got \"%s\"\n", line, reason, command.error);
 }
 
-
-//VALID COMMANDS
 
 static void test_valid_commands(void){
     printf("valid commands\n");
@@ -61,11 +58,6 @@ static void test_valid_commands(void){
 }
 
 
-
-/* 
-The following block of code was partially made using: 
-Anthropic (2026). Claude(Opus 5.5) https://claude.ai
-*/
 
 static void test_logs(void){
     printf("LOGS variants\n");
@@ -104,8 +96,6 @@ static void test_logs(void){
 }
 
 
-
-//MALFORMED LINES
 
 static void test_invalid_commands(void){
     printf("malformed lines\n");
@@ -153,9 +143,6 @@ static void test_too_many_words(void){
 
 
 
-//RESPONSE (OK|ERR <n>\n<body>)
-
-//Sends one response on one end of a socketpair and reads it back from the other end.
 static void round_trip(int ok, const char *body){
     int sockets[2];
     CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);

@@ -1,4 +1,4 @@
-# Example from the project statement
+# Two stages with artifacts, WordCount and Histogram.
 # Run: pipectl <host> <port> submit examples/example.yaml
 name: example
 stages:

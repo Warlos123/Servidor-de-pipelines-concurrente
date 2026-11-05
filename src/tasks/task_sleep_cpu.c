@@ -10,7 +10,6 @@
 #include <string.h>
 #include <time.h>
 
-/* Helper: find a key in a kv array */
 const char *task_input_get(const kv_t *inputs, size_t n, const char *key)
 {
     for (size_t i = 0; i < n; i++) {
@@ -20,11 +19,6 @@ const char *task_input_get(const kv_t *inputs, size_t n, const char *key)
     }
     return NULL;
 }
-
-/* =========================================================
- * Sleep@1
- * Inputs: seconds (integer string)
- * ========================================================= */
 
 int task_sleep(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 {
@@ -63,12 +57,6 @@ int task_sleep(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     return 0;
 }
 
-/* =========================================================
- * Cpu@1
- * Inputs: iterations, seed
- * Sets variable CPU_RESULT.
- * ========================================================= */
-
 int task_cpu(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 {
     const char *iter_str = task_input_get(inputs, n_inputs, "iterations");
@@ -92,18 +80,13 @@ int task_cpu(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
              iterations, seed);
     log_append(ctx->log, msg);
 
-    /*
-     * Deterministic CPU-bound computation: a simple linear congruential
-     * generator iterated N times.  Result is the same regardless of thread
-     * count because it is a sequential computation.
-     */
+    /* Sequential LCG, so the result does not depend on the thread count. */
     unsigned long state = seed;
     for (long i = 0; i < iterations; i++) {
         /* LCG constants from Knuth / MMIX */
         state = state * 6364136223846793005UL + 1442695040888963407UL;
     }
 
-    /* Store result as a decimal string in CPU_RESULT */
     char result_str[32];
     snprintf(result_str, sizeof result_str, "%lu", state);
     if (var_map_set(&ctx->vars, "CPU_RESULT", result_str) < 0) {

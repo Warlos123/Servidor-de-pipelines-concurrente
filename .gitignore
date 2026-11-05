@@ -1,0 +1,8 @@
+# Artefactos de compilación (regenerables con `make`)
+build/
+bin/
+
+# Objetos y binarios sueltos
+*.o
+*.a
+*.so

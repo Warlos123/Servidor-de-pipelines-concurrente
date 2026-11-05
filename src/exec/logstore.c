@@ -29,7 +29,6 @@ void log_append(job_log_t *log, const char *line)
     }
 
     size_t len = strlen(line);
-    /* Ensure trailing newline */
     bool needs_nl = (len == 0 || line[len - 1] != '\n');
     size_t total  = len + (needs_nl ? 1 : 0);
 
@@ -37,7 +36,6 @@ void log_append(job_log_t *log, const char *line)
     pthread_mutex_lock(&log->mutex);
 #endif
 
-    /* Grow buffer if needed */
     while (log->used + total >= log->size) {
         size_t newsize = log->size * 2;
         char  *newbuf  = realloc(log->buf, newsize);
@@ -70,7 +68,6 @@ size_t log_read(job_log_t *log, size_t *offset, char *buf, size_t cap, bool *don
 {
     pthread_mutex_lock(&log->mutex);
 
-    //Sleeps (releasing the mutex) until there is new text or the job finished.
     while (log->used <= *offset && !log->closed) {
         pthread_cond_wait(&log->changed, &log->mutex);
     }
@@ -115,7 +112,6 @@ void log_close(job_log_t *log)
     pthread_mutex_lock(&log->mutex);
     log->closed = true;
 
-    //Wakes the readers so they see the log is finished and stop waiting.
     pthread_cond_broadcast(&log->changed);
     pthread_mutex_unlock(&log->mutex);
 }

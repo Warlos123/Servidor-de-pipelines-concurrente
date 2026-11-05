@@ -14,8 +14,6 @@
 #include <spawn.h>
 #include <sys/wait.h>
 
-/* ---------- internal helpers ---------- */
-
 /* Build an absolute path from a base and a relative path.
  * Returns a heap-allocated string or NULL on OOM/overflow. */
 static char *abs_path(const char *base, const char *rel)
@@ -32,7 +30,6 @@ static char *abs_path(const char *base, const char *rel)
     return p;
 }
 
-/* Create a directory and all its parents (like mkdir -p). */
 static int mkdir_p(const char *path)
 {
     char tmp[PATH_MAX];
@@ -59,12 +56,8 @@ static int mkdir_p(const char *path)
 
 extern char **environ;
 
-/*
- * Copies src to dest with "cp -r"
- */
 static int copy_recursive(const char *src, const char *dest)
 {
-    /* Make sure dest parent exists */
     char *parent = strdup(dest);
     if (parent == NULL) {
         return -1;
@@ -97,8 +90,6 @@ static int copy_recursive(const char *src, const char *dest)
     }
     return -1;
 }
-
-/* ---------- public API ---------- */
 
 int artifact_store_init(artifact_store_t *store, const char *workdir,
                         uint64_t run_id)
@@ -134,7 +125,6 @@ int artifact_publish(const artifact_store_t *store, const char *name,
     }
     snprintf(dst, dst_len, "%s/%s", store->base_dir, name);
 
-    /* Create the artifact slot directory */
     if (mkdir_p(dst) < 0) {
         free(src_abs);
         free(dst);
