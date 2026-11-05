@@ -156,8 +156,16 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     size_t size = (size_t)fsize;
     char  *data = malloc(size + 1);
     if (data == NULL) { fclose(f); return -1; }
-    fread(data, 1, size, f);
+     size_t read_bytes = fread(data, 1, size, f);
     fclose(f);
+
+    if (read_bytes != size) {
+        char msg[PATH_MAX + 64];
+        snprintf(msg, sizeof msg, "##[error] WordCount@1: cannot read '%s'.", abs_in);
+        log_append(ctx->log, msg);
+        free(data);
+        return -1;
+    }
     data[size] = '\0';
 
     /* Lowercase the entire buffer for case-insensitive comparison */
@@ -312,8 +320,16 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     size_t size = (size_t)fsize;
     unsigned char *data = malloc(size);
     if (data == NULL) { fclose(f); return -1; }
-    fread(data, 1, size, f);
+    size_t read_bytes = fread(data, 1, size, f);
     fclose(f);
+    
+    if (read_bytes != size) {
+        char msg[PATH_MAX + 64];
+        snprintf(msg, sizeof msg, "##[error] Histogram@1: cannot read '%s'.", abs_in);
+        log_append(ctx->log, msg);
+        free(data);
+        return -1;
+    }
 
     /* Per-thread local counts (256 byte values) */
     long (*local_counts)[256] = calloc((size_t)n_threads,
