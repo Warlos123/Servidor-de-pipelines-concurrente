@@ -18,7 +18,8 @@ OBJS_TASKS  = $(BUILD)/task_sleep_cpu.o $(BUILD)/task_data.o
 
 ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \
 $(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_registry \
-$(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol
+$(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol \
+$(BIN)/test_determinism $(BIN)/test_variables
 
 all: $(ALL_BINS)
 
@@ -38,6 +39,9 @@ $(BIN)/test_scheduler: $(BUILD)/test_scheduler.o $(OBJS_CORE) | $(BIN)
 $(BIN)/test_commands: $(BUILD)/test_commands.o $(BUILD)/commands.o $(OBJS_YAML) $(OBJS_NET) $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ -lyaml
 
+$(BIN)/test_variables: $(BUILD)/test_variables.o $(OBJS_CORE) $(OBJS_EXEC) $(OBJS_TASKS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
 $(BIN)/test_determinism: $(BUILD)/test_determinism.o $(OBJS_CORE) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -53,8 +57,8 @@ $(BIN)/test_protocol: $(BUILD)/test_protocol.o $(OBJS_NET) | $(BIN)
 test: all
 	@echo "Ejecutando suite de pruebas local..."
 	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry && \
-	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_determinism
-	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol
+	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol && \
+	$(BIN)/test_determinism && $(BIN)/test_variables
 
 # --- Pattern rules for each source directory ---
 
