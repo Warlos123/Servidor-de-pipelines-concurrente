@@ -1,6 +1,7 @@
 CC      = gcc
 STD    := $(shell $(CC) -std=c23 -E -x c /dev/null >/dev/null 2>&1 && echo c23 || echo c2x)
-CFLAGS  = -std=$(STD) -Wall -Wextra -pedantic -O2 -pthread -fopenmp -IincludeBUILD   = build
+CFLAGS  = -std=$(STD) -Wall -Wextra -pedantic -O2 -pthread -fopenmp -Iinclude
+BUILD   = build
 BIN     = bin
 
 ifeq ($(SIN_PROTECCION),1)
