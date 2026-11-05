@@ -20,11 +20,15 @@ OBJS_TASKS  = $(BUILD)/task_sleep_cpu.o $(BUILD)/task_data.o
 ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \
 $(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_registry \
 $(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol \
-$(BIN)/test_determinism $(BIN)/test_variables $(BIN)/test_race_logs
+$(BIN)/test_determinism $(BIN)/test_variables $(BIN)/test_race_logs \
+$(BIN)/test_tasks_determinism
 
 all: $(ALL_BINS)
 
 $(BIN)/test_race_logs: $(BUILD)/test_race_logs.o $(BUILD)/logstore.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_tasks_determinism: $(BUILD)/test_tasks_determinism.o $(OBJS_TASKS) $(BUILD)/logstore.o $(BUILD)/exec_job_execute.o $(BUILD)/artifacts.o | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(BIN)/pipelined: $(BUILD)/pipelined.o $(OBJS_NET) $(OBJS_CORE) \
