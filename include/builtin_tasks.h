@@ -42,9 +42,9 @@ const char *task_input_get(const kv_t *inputs, size_t n, const char *key);
  * Global cap on the number of threads a data task may use. The server sets
  * it once at startup from the --omp-threads argument, before any agent
  * thread runs, and the agents only read it afterwards, so no lock is needed.
- * Several parallel agents plus task threads easily oversubscribe the CPU:
- * agents x task threads <= cores available. The cap is server-wide and
- * configurable without recompiling, as the specification requires.
+ * It is one value for every data task: several parallel agents running tasks
+ * at once multiply agent x task threads, and the cap keeps that count close
+ * to the cores available instead of oversubscribing them.
  */
 void task_set_max_threads(int max_threads);
 

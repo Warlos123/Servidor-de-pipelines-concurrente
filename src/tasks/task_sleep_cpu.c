@@ -148,7 +148,6 @@ int task_cpu(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
         state = state * 6364136223846793005UL + 1442695040888963407UL;
     }
 
-    /* Store result as a decimal string in CPU_RESULT */
     char result_str[32];
     snprintf(result_str, sizeof result_str, "%lu", state);
     if (var_map_set(&ctx->vars, "CPU_RESULT", result_str) < 0) {
