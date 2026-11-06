@@ -1,0 +1,24 @@
+name: bench_deep
+# Deep benchmark: a chain of 16 jobs where every one depends on the previous
+# one. The critical path is the whole pipeline (~1.6 s of CPU at T(1)), so the
+# speedup stays near 1 no matter how many agents there are: the graph itself
+# is the serial fraction of Amdahl.
+stages:
+- stage: chain
+  jobs:
+  - {job: cpu01, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 1}}]}
+  - {job: cpu02, dependsOn: cpu01, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 2}}]}
+  - {job: cpu03, dependsOn: cpu02, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 3}}]}
+  - {job: cpu04, dependsOn: cpu03, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 4}}]}
+  - {job: cpu05, dependsOn: cpu04, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 5}}]}
+  - {job: cpu06, dependsOn: cpu05, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 6}}]}
+  - {job: cpu07, dependsOn: cpu06, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 7}}]}
+  - {job: cpu08, dependsOn: cpu07, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 8}}]}
+  - {job: cpu09, dependsOn: cpu08, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 9}}]}
+  - {job: cpu10, dependsOn: cpu09, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 10}}]}
+  - {job: cpu11, dependsOn: cpu10, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 11}}]}
+  - {job: cpu12, dependsOn: cpu11, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 12}}]}
+  - {job: cpu13, dependsOn: cpu12, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 13}}]}
+  - {job: cpu14, dependsOn: cpu13, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 14}}]}
+  - {job: cpu15, dependsOn: cpu14, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 15}}]}
+  - {job: cpu16, dependsOn: cpu15, steps: [{task: Cpu@1, inputs: {iterations: 100000000, seed: 16}}]}

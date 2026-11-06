@@ -21,6 +21,7 @@ Building the project:
     - The first argument is the port. 
     - The second argument is the number of agents: how many jobs can run at the same time across all the pipelines.
     - The third argument is the work directory.
+    - Optional: `--omp-threads <max>` caps the OpenMP threads each data task (WordCount, Histogram) may use, no matter what its `threads` input asks for. With several agents running data tasks at once, agents x task threads can exceed the CPU cores; set the cap so that agents x omp-threads stays close to the number of cores. Without the flag the tasks use the thread count requested in the YAML.
 - Stop it with Ctrl-C or with the `SHUTDOWN` command.
 
 ## Run the client
@@ -62,3 +63,10 @@ The `examples/` folder has pipelines ready to submit:
     - Each program prints how many checks passed; `make test` stops at the first one that fails.
 - Run `make test-race`
     - Builds the determinism test with `-DSIN_PROTECCION` (the shared data is no longer protected) to show the race condition. It is expected to fail.
+
+## Metrics
+
+- `bench/` has the measuring pipelines (wide, deep, data tasks and combined) and the scripts that generate them and run them:
+    - `bash bench/run.sh` runs the whole battery (agents and threads sweeps, 5 runs per point) and leaves a CSV in `bench/results/`.
+    - `python3 bench/analyze.py all` prints the medians, the speedup S(p), the efficiency E(p) and the fit to the law of Amdahl.
+- See `bench/README.md` for details.

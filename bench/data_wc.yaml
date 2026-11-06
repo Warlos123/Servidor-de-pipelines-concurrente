@@ -1,0 +1,11 @@
+name: bench_data_wc
+# Data-parallel data task benchmark. bench/run.sh replaces @CORPUS@ with the
+# absolute path of the generated corpus and @THREADS@ with the number of
+# OpenMP threads for this run, so one template serves the whole sweep.
+stages:
+- stage: count
+  jobs:
+  - job: wc
+    steps:
+    - task: WordCount@1
+      inputs: {file: @CORPUS@, threads: @THREADS@, output: wc_result.txt, top: 10}

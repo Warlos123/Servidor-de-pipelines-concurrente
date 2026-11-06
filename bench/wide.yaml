@@ -1,0 +1,23 @@
+name: bench_wide
+# Wide benchmark: 16 independent jobs, no dependencies between them.
+# T(1) is about 16 x 0.5 s = 8 s of CPU work; with p agents it should
+# approach T(1) / p, which is what the wide scenario measures.
+stages:
+- stage: wide
+  jobs:
+  - {job: cpu01, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 1}}]}
+  - {job: cpu02, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 2}}]}
+  - {job: cpu03, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 3}}]}
+  - {job: cpu04, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 4}}]}
+  - {job: cpu05, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 5}}]}
+  - {job: cpu06, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 6}}]}
+  - {job: cpu07, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 7}}]}
+  - {job: cpu08, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 8}}]}
+  - {job: cpu09, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 9}}]}
+  - {job: cpu10, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 10}}]}
+  - {job: cpu11, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 11}}]}
+  - {job: cpu12, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 12}}]}
+  - {job: cpu13, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 13}}]}
+  - {job: cpu14, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 14}}]}
+  - {job: cpu15, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 15}}]}
+  - {job: cpu16, steps: [{task: Cpu@1, inputs: {iterations: 500000000, seed: 16}}]}

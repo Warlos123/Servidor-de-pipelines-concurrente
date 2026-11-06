@@ -21,7 +21,7 @@ ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \
 $(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_registry \
 $(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol \
 $(BIN)/test_determinism $(BIN)/test_variables $(BIN)/test_race_logs \
-$(BIN)/test_tasks_determinism
+$(BIN)/test_tasks_determinism $(BIN)/gen_corpus
 
 all: $(ALL_BINS)
 
@@ -30,6 +30,9 @@ $(BIN)/test_race_logs: $(BUILD)/test_race_logs.o $(BUILD)/logstore.o | $(BIN)
 
 $(BIN)/test_tasks_determinism: $(BUILD)/test_tasks_determinism.o $(OBJS_TASKS) $(BUILD)/logstore.o $(BUILD)/exec_job_execute.o $(BUILD)/artifacts.o | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/gen_corpus: bench/gen_corpus.c | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $<
 
 $(BIN)/pipelined: $(BUILD)/pipelined.o $(OBJS_NET) $(OBJS_CORE) \
                   $(OBJS_EXEC) $(OBJS_TASKS) $(OBJS_YAML) $(BUILD)/commands.o | $(BIN)
