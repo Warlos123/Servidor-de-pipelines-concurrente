@@ -90,6 +90,14 @@ wait_status() {
 out_has() { grep -qF -- "$1" "$TMP/out"; }
 out_lines() { wc -l < "$TMP/out"; }
 
+# no_orphan <pattern>: passes when no process matches the pattern.
+no_orphan() {
+    if pgrep -f "$1" > /dev/null; then
+        return 1
+    fi
+    return 0
+}
+
 
 
 # A free-looking port, so the tests don't clash with a server already running.
@@ -267,13 +275,252 @@ check "never more jobs than agents (took ${ELAPSED}s)" compare_floats "$ELAPSED"
 
 
 
+# ---------- job timeout ----------
+
+echo "job timeout"
+
+cat > "$TMP/timeout_works.yaml" <<'YAML'
+name: timeout_works
+stages:
+- stage: s
+  jobs:
+  - job: naps
+    timeoutInSeconds: 2
+    steps:
+    - script: sleep 1.5
+YAML
+
+cat > "$TMP/timeout_sleep_task.yaml" <<'YAML'
+name: timeout_sleep_task
+stages:
+- stage: s
+  jobs:
+  - job: sleeper
+    timeoutInSeconds: 2
+    steps:
+    - task: Sleep@1
+      inputs: {seconds: 10}
+YAML
+
+cat > "$TMP/timeout_total.yaml" <<'YAML'
+name: timeout_total
+stages:
+- stage: s
+  jobs:
+  - job: three_naps
+    timeoutInSeconds: 2
+    steps:
+    - script: sleep 0.8
+    - script: sleep 0.8
+    - script: sleep 0.8
+YAML
+
+client SUBMIT "$TMP/timeout_works.yaml"
+check "under the limit accepted" [ $? -eq 0 ]
+WORKS_ID=$(cat "$TMP/out")
+check "under the limit finishes" wait_finished "$WORKS_ID" 10
+check "under the limit succeeded" [ "$(run_status "$WORKS_ID")" = "succeeded" ]
+
+client SUBMIT "$TMP/timeout_sleep_task.yaml"
+check "sleep task accepted" [ $? -eq 0 ]
+TASK_ID=$(cat "$TMP/out")
+START=$(date +%s.%N)
+check "sleep task finishes" wait_finished "$TASK_ID" 10
+END=$(date +%s.%N)
+ELAPSED=$(calc_elapsed "$END" "$START")
+check "sleep task timeout stops it early (${ELAPSED}s)" compare_floats "$ELAPSED" "<=" "5"
+check "sleep task run failed" [ "$(run_status "$TASK_ID")" = "failed" ]
+client LOGS "$TASK_ID" sleeper
+check "sleep task logged the timeout" out_has "##[error] Timeout exceeded."
+
+client SUBMIT "$TMP/timeout_total.yaml"
+check "total timeout accepted" [ $? -eq 0 ]
+TOTAL_ID=$(cat "$TMP/out")
+check "total timeout finishes" wait_finished "$TOTAL_ID" 10
+check "total timeout run failed" [ "$(run_status "$TOTAL_ID")" = "failed" ]
+client LOGS "$TOTAL_ID"
+check "total timeout logged" out_has "##[error] Timeout exceeded."
+
+
+
+# ---------- background children die with the step ----------
+
+echo "background children"
+
+cat > "$TMP/background.yaml" <<'YAML'
+name: background
+stages:
+- stage: s
+  jobs:
+  - job: bg
+    steps:
+    - script: sleep 5.4321 & echo "spawned"
+YAML
+
+START=$(date +%s.%N)
+client SUBMIT "$TMP/background.yaml"
+check "background accepted" [ $? -eq 0 ]
+BG_ID=$(cat "$TMP/out")
+check "background finishes quickly" wait_finished "$BG_ID" 5
+END=$(date +%s.%N)
+ELAPSED=$(calc_elapsed "$END" "$START")
+check "background step doesn't wait for its child (${ELAPSED}s)" compare_floats "$ELAPSED" "<=" "3"
+check "no orphan child survives" no_orphan "sleep 5.4321"
+
+
+
+# ---------- artifacts with spaces and apostrophes ----------
+
+echo "artifact names with spaces and quotes"
+
+cat > "$TMP/spaces.yaml" <<'YAML'
+name: spaces
+stages:
+- stage: s
+  jobs:
+  - job: j
+    steps:
+    - script: mkdir -p "my dir/weird 'name" && echo "contenido secreto" > "my dir/weird 'name/text file 'x'.txt"
+    - publish: my dir/weird 'name
+      artifact: artifact 'con' espacios
+    - download: artifact 'con' espacios
+      path: dest 'in' spaces
+    - script: cat "dest 'in' spaces/weird 'name/text file 'x'.txt" | grep "contenido secreto" && echo "SPACES_OK"
+YAML
+
+client SUBMIT "$TMP/spaces.yaml"
+check "spaces accepted" [ $? -eq 0 ]
+SPACES_ID=$(cat "$TMP/out")
+check "spaces finishes" wait_finished "$SPACES_ID" 10
+check "spaces succeeds" [ "$(run_status "$SPACES_ID")" = "succeeded" ]
+client LOGS "$SPACES_ID"
+check "spaces downloaded correctly" out_has "SPACES_OK"
+
+
+
+# ---------- unknown task ----------
+
+echo "unknown task"
+
+cat > "$TMP/unknown_task.yaml" <<'YAML'
+name: unknown_task
+stages:
+- stage: s
+  jobs:
+  - job: j
+    steps:
+    - task: Nope@9
+      inputs: {seconds: 1}
+YAML
+
+client SUBMIT "$TMP/unknown_task.yaml"
+check "unknown task rejected" [ $? -eq 1 ]
+check "unknown task reported" out_has "unknown task 'Nope@9'"
+
+
+
+# ---------- workspace isolation ----------
+
+echo "workspace isolation"
+
+cat > "$TMP/isolation.yaml" <<'YAML'
+name: isolation
+stages:
+- stage: leave
+  jobs:
+  - job: writer
+    steps:
+    - script: echo "archivo privado" > left.txt
+- stage: check
+  jobs:
+  - job: checker
+    steps:
+    - script: "test ! -f left.txt && echo ISOLATED_OK"
+YAML
+
+client SUBMIT "$TMP/isolation.yaml"
+check "isolation accepted" [ $? -eq 0 ]
+ISO_ID=$(cat "$TMP/out")
+check "isolation finishes" wait_finished "$ISO_ID" 10
+check "isolation succeeds" [ "$(run_status "$ISO_ID")" = "succeeded" ]
+client LOGS "$ISO_ID"
+check "workspaces don't share files" out_has "ISOLATED_OK"
+
+
+
+# ---------- wordcount with 1 and N threads ----------
+
+echo "wordcount threads determinism"
+
+cat > "$TMP/wc_threads.yaml" <<'YAML'
+name: wc_threads
+stages:
+- stage: prep
+  jobs:
+  - job: corpus
+    steps:
+    - script: seq 200 | awk '{print $0 " hola mundo texto repetido"}' > corpus.txt && echo "ha" >> corpus.txt
+    - publish: corpus.txt
+      artifact: corpus
+- stage: count
+  jobs:
+  - job: one
+    steps:
+    - download: corpus
+      path: .
+    - task: WordCount@1
+      inputs: {file: corpus.txt, threads: 1, output: out1.txt, top: 5}
+    - publish: out1.txt
+      artifact: out1
+  - job: many
+    steps:
+    - download: corpus
+      path: .
+    - task: WordCount@1
+      inputs: {file: corpus.txt, threads: 8, output: out8.txt, top: 5}
+    - publish: out8.txt
+      artifact: out8
+- stage: compare
+  jobs:
+  - job: cmp
+    steps:
+    - download: out1
+      path: a
+    - download: out8
+      path: b
+    - script: diff a/out1.txt b/out8.txt && echo "WC_THREADS_MATCH"
+YAML
+
+client SUBMIT "$TMP/wc_threads.yaml"
+check "wordcount threads accepted" [ $? -eq 0 ]
+WC_ID=$(cat "$TMP/out")
+check "wordcount threads finishes" wait_finished "$WC_ID" 20
+check "wordcount threads succeeds" [ "$(run_status "$WC_ID")" = "succeeded" ]
+client LOGS "$WC_ID"
+check "1 thread equals N threads" out_has "WC_THREADS_MATCH"
+
+
+
+# ---------- continueOnError ----------
+
+echo "continueOnError"
+client SUBMIT tests/continue_on_error.yaml
+check "continueOnError accepted" [ $? -eq 0 ]
+CONT_ID=$(cat "$TMP/out")
+check "continueOnError finishes" wait_finished "$CONT_ID" 10
+check "continueOnError partially succeeds" [ "$(run_status "$CONT_ID")" = "partiallySucceeded" ]
+
+
+
 # ---------- publish fail ----------
 
 echo "publish fail"
-FAIL_ID=$(cat "$TMP/out")
+
+client SUBMIT "$TMP/publish_fail.yaml"
 check "publish fail accepted" [ $? -eq 0 ]
-status=$(run_status "$FAIL_ID"); echo "DEBUG status: $status"
-check "publish fail run failed" [ "$status" = "failed" ]
+FAIL_ID=$(cat "$TMP/out")
+check "publish fail run finishes" wait_finished "$FAIL_ID" 10
+check "publish fail run failed" [ "$(run_status "$FAIL_ID")" = "failed" ]
 client LOGS "$FAIL_ID"
 check "logs have the error" out_has "##[error] publish failed."
 
