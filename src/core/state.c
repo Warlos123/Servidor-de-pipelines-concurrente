@@ -178,6 +178,7 @@ bool condition_met(condition_t condition, const status_t *deps_status, size_t n_
 
     bool any_failed = false;
     bool any_canceled = false;
+    bool any_skipped = false;
 
     for (size_t i = 0; i < n_deps; i++) {
         if (deps_status[i] == ST_FAILED) {
@@ -186,11 +187,16 @@ bool condition_met(condition_t condition, const status_t *deps_status, size_t n_
         if (deps_status[i] == ST_CANCELED) {
             any_canceled = true;
         }
+        if (deps_status[i] == ST_SKIPPED) {
+            any_skipped = true;
+        }
     }
 
     if (condition == COND_FAILED) {
         return any_failed;
     }
 
-    return !any_failed && !any_canceled;
+    //succeeded() needs every dependency to have actually run and finished well:
+    //failed, canceled and skipped dependencies don't meet it.
+    return !any_failed && !any_canceled && !any_skipped;
 }
