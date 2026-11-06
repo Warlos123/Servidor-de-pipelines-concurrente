@@ -1,8 +1,20 @@
-# Artefactos de compilación (regenerables con `make`)
+# Build artifacts (regenerable with make)
 build/
 bin/
 
-# Objetos y binarios sueltos
+# Loose objects and binaries
 *.o
 *.a
 *.so
+
+# Logs and dumps of failed runs
+*.log
+core
+core.*
+
+# Editors and operating system
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
