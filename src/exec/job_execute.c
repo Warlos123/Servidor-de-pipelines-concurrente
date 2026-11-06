@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <limits.h>
 #include <signal.h>
 #include <spawn.h>
@@ -246,7 +247,26 @@ static int spawn_script(const char *cmd, const char *workspace,
 //Kills the script and everything it started
 static void kill_child(const child_t *child)
 {
+    // Terminate the process group
+    killpg(child->pgid, SIGTERM);
+    
+    // Give it a short time to shut down gracefully
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000L }; /* 100ms */
+    nanosleep(&ts, NULL);
+    
+    // Force kill if it's still alive
     killpg(child->pgid, SIGKILL);
+}
+
+static int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+    (void)sb; (void)typeflag; (void)ftwbuf;
+    return remove(fpath);
+}
+
+static int workspace_cleanup(const char *path)
+{
+    return nftw(path, unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
 }
 
 
@@ -561,6 +581,7 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
     if (artifact_store_init(&arts, workdir, run->id) < 0) {
         var_map_destroy(&inherited);
         var_map_destroy(&ctx.vars);
+        workspace_cleanup(ctx.workspace);
         free(ctx.workspace);
         return ST_FAILED;
     }
@@ -639,6 +660,7 @@ status_t execute_job(run_t *run, size_t job_idx, void *work_directory)
     log_close(log);
     artifact_store_destroy(&arts);
     var_map_destroy(&ctx.vars);
+    workspace_cleanup(ctx.workspace);
     free(ctx.workspace);
 
     return final;

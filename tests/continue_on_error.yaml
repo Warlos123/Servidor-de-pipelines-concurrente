@@ -1,0 +1,9 @@
+name: continue-test
+stages:
+  - stage: test
+    jobs:
+      - job: continue_job
+        steps:
+          - script: exit 1
+            continueOnError: true
+          - script: echo "Should run"

@@ -110,8 +110,8 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
         return -1;
     }
 
-    int n_threads = (int)strtol(thr_str, NULL, 10);
-    if (n_threads < 1) n_threads = 1;
+    int n_threads = task_effective_threads((int)strtol(thr_str, NULL, 10),
+                                           ctx, "WordCount@1");
 
     int top_n = 10;
     if (top_str != NULL) {
@@ -166,6 +166,7 @@ int task_wordcount(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     #pragma omp parallel for num_threads(n_threads) schedule(static)
     for (int t = 0; t < n_threads; t++) {
+        if (atomic_load(ctx->cancel_flag)) continue;
         size_t start = 0;
         if (t > 0) {
             start = align_to_word_boundary(data, (size_t)t * chunk, size);
@@ -263,9 +264,9 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
     }
 
     int n_bins    = (int)strtol(bins_str, NULL, 10);
-    int n_threads = (int)strtol(thr_str,  NULL, 10);
+    int n_threads = task_effective_threads((int)strtol(thr_str, NULL, 10),
+                                           ctx, "Histogram@1");
     if (n_bins < 1)    n_bins    = 1;
-    if (n_threads < 1) n_threads = 1;
     if (n_bins > 256)  n_bins    = 256;
 
     char abs_in[PATH_MAX], abs_out[PATH_MAX];
@@ -312,6 +313,7 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx)
 
     #pragma omp parallel for num_threads(n_threads) schedule(static)
     for (int t = 0; t < n_threads; t++) {
+        if (atomic_load(ctx->cancel_flag)) continue;
         size_t start = (size_t)t * chunk;
         size_t end   = start + chunk;
         if (end > size) end = size;

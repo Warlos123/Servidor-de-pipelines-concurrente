@@ -37,6 +37,16 @@ check() {
     echo "  FAIL $description"
 }
 
+# Compare float: compare_floats val1 op val2
+compare_floats() {
+    awk -v v1="$1" -v op="$2" -v v2="$3" 'BEGIN {if (v1 + 0 op v2 + 0) exit 0; exit 1}'
+}
+
+# Calculate elapsed: calc_elapsed end start
+calc_elapsed() {
+    awk -v end="$1" -v start="$2" 'BEGIN {print end - start}'
+}
+
 # client <args...>: runs pipectl against the test server; output goes to $TMP/out.
 client() {
     "$CLIENT" "$HOST" "$PORT" "$@" > "$TMP/out" 2>&1
@@ -59,6 +69,21 @@ wait_finished() {
         esac
     done
 
+    return 1
+}
+
+# wait_status <id> <status> <seconds>: waits until the run status matches the target status.
+wait_status() {
+    local id=$1
+    local target=$2
+    local timeout=$3
+    local tries=$(($timeout * 10))
+    for ((i = 0; i < tries; i++)); do
+        if [ "$(run_status "$id")" = "$target" ]; then
+            return 0
+        fi
+        sleep 0.1
+    done
     return 1
 }
 
@@ -86,6 +111,9 @@ if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     cat "$TMP/server.log"
     exit 1
 fi
+
+cp tests/cancel_task.yaml "$TMP/cancel_task.yaml"
+cp tests/publish_fail.yaml "$TMP/publish_fail.yaml"
 
 
 
@@ -234,10 +262,35 @@ AGENTS_ID=$(cat "$TMP/out")
 check "wide run finishes" wait_finished "$AGENTS_ID" 10
 END=$(date +%s.%N)
 
-ELAPSED=$(echo "$END - $START" | bc)
-check "never more jobs than agents (took ${ELAPSED}s)" [ "$(echo "$ELAPSED >= 1.9" | bc)" -eq 1 ]
+ELAPSED=$(calc_elapsed "$END" "$START")
+check "never more jobs than agents (took ${ELAPSED}s)" compare_floats "$ELAPSED" ">=" "1.9"
 
 
+
+# ---------- publish fail ----------
+
+echo "publish fail"
+FAIL_ID=$(cat "$TMP/out")
+check "publish fail accepted" [ $? -eq 0 ]
+status=$(run_status "$FAIL_ID"); echo "DEBUG status: $status"
+check "publish fail run failed" [ "$status" = "failed" ]
+client LOGS "$FAIL_ID"
+check "logs have the error" out_has "##[error] publish failed."
+
+
+# ---------- cancel data task ----------
+
+echo "cancel data task"
+client SUBMIT "$TMP/cancel_task.yaml"
+CANCEL_ID=$(cat "$TMP/out")
+# Wait until running
+check "cancel task starts" wait_status "$CANCEL_ID" "running" 5
+client CANCEL "$CANCEL_ID"
+check "cancel accepted" out_has "canceling"
+check "canceled run finishes" wait_status "$CANCEL_ID" "canceled" 5
+
+
+# ---------- concurrent clients ----------
 
 echo "concurrent clients"
 

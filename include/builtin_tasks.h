@@ -38,4 +38,26 @@ int task_histogram(const kv_t *inputs, size_t n_inputs, job_context_t *ctx);
 
 const char *task_input_get(const kv_t *inputs, size_t n, const char *key);
 
+/*
+ * Global cap on the number of threads a data task may use. The server sets
+ * it once at startup from the --omp-threads argument, before any agent
+ * thread runs, and the agents only read it afterwards, so no lock is needed.
+ * Several parallel agents plus task threads easily oversubscribe the CPU:
+ * agents x task threads <= cores available. The cap is server-wide and
+ * configurable without recompiling, as the specification requires.
+ */
+void task_set_max_threads(int max_threads);
+
+/* Returns the cap. 0 means no cap: tasks use their requested thread count. */
+int task_max_threads(void);
+
+/*
+ * Effective thread count for a data task: the requested `threads` input
+ * clamped to the server cap when it is lower, and never below 1. Logs a
+ * line into the job's log when the cap applies. Internal helper shared by
+ * WordCount@1 and Histogram@1.
+ */
+int task_effective_threads(int requested, job_context_t *ctx,
+                           const char *task_name);
+
 #endif /* BUILTIN_TASKS_H */

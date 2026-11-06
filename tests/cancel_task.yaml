@@ -1,0 +1,9 @@
+name: cancel_test
+stages:
+- stage: test
+  jobs:
+  - job: cancel_me
+    steps:
+    - task: Sleep@1
+      inputs:
+        seconds: 5
