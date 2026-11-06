@@ -66,7 +66,7 @@ test: all
 	@echo "Ejecutando suite de pruebas local..."
 	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry && \
 	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol && \
-	$(BIN)/test_determinism && $(BIN)/test_variables && \
+	$(BIN)/test_determinism && $(BIN)/test_variables && $(BIN)/test_tasks_determinism && \
 	bash tests/test_integration.sh
 
 # --- Pattern rules for each source directory ---
