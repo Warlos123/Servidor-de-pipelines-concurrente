@@ -247,14 +247,14 @@ static int spawn_script(const char *cmd, const char *workspace,
 //Kills the script and everything it started
 static void kill_child(const child_t *child)
 {
-    // Terminate the process group
+    //SIGTERM first so the children shut down cleanly, a short grace, and
+    //then SIGKILL for whatever ignored it. Going to the whole group, not
+    //just the pid, also gets every process the script spawned.
     killpg(child->pgid, SIGTERM);
-    
-    // Give it a short time to shut down gracefully
+
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000L }; /* 100ms */
     nanosleep(&ts, NULL);
-    
-    // Force kill if it's still alive
+
     killpg(child->pgid, SIGKILL);
 }
 
@@ -430,7 +430,8 @@ static int run_step(const step_def_t *step, job_context_t *ctx,
             rc = -1;
         }
 
-        //The keys belong to the step
+        //Only the values are ours to free: the keys still point into the
+        //parsed step.
         for (size_t i = 0; i < n_inputs; i++) {
             free(inputs[i].value);
         }

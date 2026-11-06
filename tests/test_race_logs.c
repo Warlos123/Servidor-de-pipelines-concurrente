@@ -53,9 +53,9 @@ int main(void) {
         printf("SUCCESS: Line count matches.\n");
     }
 
-    // Optional: check for interleaved lines (partial lines)
-    // Every line should match the pattern "This is a test line from thread %d, iteration %d\n"
-    // Since we can't easily parse it all, at least we checked the count.
+    // A race shows up as torn or interleaved lines: every line ends in '\n',
+    // so any lost or cut line changes the count. Comparing against the
+    // expected total is enough to detect it.
 
     log_destroy(&log);
     return status;
