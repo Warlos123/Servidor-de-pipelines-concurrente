@@ -70,3 +70,7 @@ The `examples/` folder has pipelines ready to submit:
     - `bash bench/run.sh` runs the whole battery (agents and threads sweeps, 5 runs per point) and leaves a CSV in `bench/results/`.
     - `python3 bench/analyze.py all` prints the medians, the speedup S(p), the efficiency E(p) and the fit to the law of Amdahl.
 - See `bench/README.md` for details.
+
+## Kabré Cluster (CeNAT)
+
+- For instructions and scripts to sync, build, test, and benchmark on the Kabré supercomputer using SLURM, see `scripts/kabre/README.md`.
