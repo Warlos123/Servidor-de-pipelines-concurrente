@@ -1,2 +1,3 @@
 # corpus generated for the data tasks (regenerable with bin/gen_corpus)
 data/
+results/plots/

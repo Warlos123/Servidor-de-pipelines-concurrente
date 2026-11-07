@@ -218,11 +218,10 @@ static int spawn_script(const char *cmd, const char *workspace,
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP);
     posix_spawnattr_setpgroup(&attr, 0); 
 
-    char *argv[] = { "sh", "-c", (char *)cmd, NULL };
+    char *argv_no_ws[] = { "sh", "-c", (char *)cmd, NULL };
+    char *argv_ws[] = { "sh", "-c", "cd \"$1\" && exec /bin/sh -c \"$2\"", "--", (char *)workspace, (char *)cmd, NULL };
+    char **argv = (workspace && workspace[0]) ? argv_ws : argv_no_ws;
     extern char **environ;
-
-
-    posix_spawn_file_actions_addchdir_np(&fa, workspace);
 
     pid_t pid;
     int   rc = posix_spawn(&pid, "/bin/sh", &fa, &attr, argv, environ);

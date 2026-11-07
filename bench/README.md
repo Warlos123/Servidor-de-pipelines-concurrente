@@ -26,6 +26,7 @@ bash bench/run.sh                      # all the scenarios
 bash bench/run.sh wide                 # just one scenario (wide|deep|data|combined)
 python3 bench/analyze.py all           # tables with the analysis
 python3 bench/analyze.py bench/results/some_env.csv
+python3 bench/plot.py                  # graphs in bench/results/plots/
 ```
 
 Adjustable with environment variables: `BENCH_SIZE` (corpus, default 512M),

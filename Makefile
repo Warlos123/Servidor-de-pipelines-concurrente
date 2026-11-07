@@ -1,5 +1,5 @@
 CC      = gcc
-STD    := $(shell $(CC) -std=c23 -E -x c /dev/null >/dev/null 2>&1 && echo c23 || echo c2x)
+STD    ?= $(shell $(CC) -std=c23 -E -x c /dev/null >/dev/null 2>&1 && echo c23 || ($(CC) -std=c2x -E -x c /dev/null >/dev/null 2>&1 && echo c2x || echo c11))
 CFLAGS  = -std=$(STD) -Wall -Wextra -pedantic -O2 -pthread -fopenmp -Iinclude
 BUILD   = build
 BIN     = bin
