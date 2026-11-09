@@ -4,6 +4,8 @@
 #include "scheduler.h"
 #include "state.h"
 
+#include "check.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,17 +15,6 @@
 #define WIDE_JOBS 6
 #define JOB_MS 50
 #define WAIT_LIMIT_MS 3000
-
-static int g_failures = 0;
-static int g_checks = 0;
-
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);  \
-        }                                                             \
-    } while (0)
 
 typedef struct {
     size_t failing_job;
@@ -90,7 +81,7 @@ static bool wait_finished(run_t *run)
 
 static void test_all_succeed(void)
 {
-    printf("wide pipeline, all succeed\n");
+    check_section("wide pipeline, all succeed", "16 jobs, ningún fallo: todos succeed y max_active nunca supera N agentes");
     fake_ctx_t ctx = { .failing_job = NO_INDEX };
     atomic_init(&ctx.order, 0);
 
@@ -123,7 +114,7 @@ static void test_all_succeed(void)
 
 static void test_failure_skips(void)
 {
-    printf("one job fails, final is skipped\n");
+    check_section("one job fails, final is skipped", "condición succeeded(): con un fallo, lo que depende de él se salta");
     fake_ctx_t ctx = { .failing_job = 2 };
     atomic_init(&ctx.order, 0);
 
@@ -148,7 +139,7 @@ static void test_failure_skips(void)
 
 static void test_two_runs_share_agents(void)
 {
-    printf("two runs compete for the same agents\n");
+    check_section("two runs compete for the same agents", "dos pipelines a la vez: el pool global los intercala sin inanición");
     fake_ctx_t ctx = { .failing_job = NO_INDEX };
     atomic_init(&ctx.order, 0);
 
@@ -179,12 +170,9 @@ static void test_two_runs_share_agents(void)
 
 int main(void)
 {
+    check_header("scheduler", "pool global de agentes, cola FIFO y salto de etapas — aquí nace y muere cada job");
     test_all_succeed();
     test_failure_skips();
     test_two_runs_share_agents();
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    if (g_failures == 0) {
-        return EXIT_SUCCESS;
-    }
-    return EXIT_FAILURE;
+    return check_summary("scheduler — DAG y pool");
 }

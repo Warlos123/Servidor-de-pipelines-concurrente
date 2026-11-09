@@ -11,20 +11,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "check.h"
+
 #define AGENTS 3
 #define RUNS 20
 #define WAIT_LIMIT_MS 10000
-
-static int g_failures = 0;
-static int g_checks = 0;
-
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);  \
-        }                                                             \
-    } while (0)
 
 static void sleep_ms(long ms){
     struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
@@ -100,7 +91,9 @@ static pipeline_t *make_pipeline(void){
     return p;
 }
 
-int main(void){
+int main(void)
+{
+    check_header("variables", "herencia entre stages/jobs: mismo YAML, mismo resultado, 20 corridas");
     char workdir[] = "/tmp/test_variables_XXXXXX";
     if(mkdtemp(workdir) == NULL){
         perror("mkdtemp");
@@ -110,7 +103,7 @@ int main(void){
     scheduler_t scheduler;
     CHECK(scheduler_start(&scheduler, AGENTS, execute_job, workdir) == 0);
 
-    printf("variables: inherited from ancestors, later job wins (%d runs)\n", RUNS);
+    check_section("variables: herencia de ancestros", "el job hereda de todos sus ancestros y gana el declarado después (20 corridas)");
     int wrong = 0;
     for(int r = 0; r < RUNS; r++){
         run_t *run = run_create((uint64_t)r + 1, make_pipeline());
@@ -147,9 +140,5 @@ int main(void){
         printf("  could not remove %s\n", workdir);
     }
 
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    if(g_failures == 0){
-        return EXIT_SUCCESS;
-    }
-    return EXIT_FAILURE;
+    return check_summary("variables — herencia de ancestros y gana el declarado después");
 }

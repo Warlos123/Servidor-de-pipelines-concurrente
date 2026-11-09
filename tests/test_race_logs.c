@@ -47,10 +47,12 @@ int main(void) {
 
     int status = 0;
     if (total_lines != NUM_THREADS * LINES_PER_THREAD) {
-        printf("FAIL: Line count mismatch!\n");
+        printf("✘ race-logs: %d de %d líneas — hay líneas perdidas o cortadas: es la carrera esperada sin protección\n",
+               total_lines, NUM_THREADS * LINES_PER_THREAD);
         status = 1;
     } else {
-        printf("SUCCESS: Line count matches.\n");
+        printf("✔ race-logs: %d de %d líneas — con protección no se pierde ninguna\n",
+               total_lines, NUM_THREADS * LINES_PER_THREAD);
     }
 
     // A race shows up as torn or interleaved lines: every line ends in '\n',

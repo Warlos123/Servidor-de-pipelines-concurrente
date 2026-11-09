@@ -4,20 +4,11 @@
 #include "model.h"
 #include "state.h"
 
+#include "check.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int g_failures = 0;
-static int g_checks = 0;
-
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-        }                                                             \
-    } while (0)
 
 /*
  * Pipeline de prueba:
@@ -80,7 +71,7 @@ static bool contains(const size_t *arr, size_t n, size_t value)
 
 static void test_status(void)
 {
-    printf("estados\n");
+    check_section("estados", "nombres visibles, estados finales y transiciones legales de run, stage y job");
     CHECK(strcmp(status_name(ST_QUEUED), "queued") == 0);
     CHECK(strcmp(status_name(ST_PARTIALLY_SUCCEEDED), "partiallySucceeded") == 0);
     CHECK(!status_is_final(ST_QUEUED));
@@ -103,7 +94,7 @@ static void test_status(void)
 
 static void test_condition(void)
 {
-    printf("condiciones\n");
+    check_section("condiciones", "succeeded(), failed() y always(): cuándo un job de salto debe correr");
     status_t ok[] = { ST_SUCCEEDED, ST_SUCCEEDED };
     status_t one_failed[] = { ST_SUCCEEDED, ST_FAILED };
 
@@ -118,7 +109,7 @@ static void test_condition(void)
 
 static run_t *test_model(void)
 {
-    printf("modelo\n");
+    check_section("modelo", "crear run con stages y jobs, ids, nombres y estados iniciales");
     run_t *run = run_create(7, make_pipeline());
     CHECK(run != NULL);
     if (run == NULL) {
@@ -140,7 +131,7 @@ static run_t *test_model(void)
 
 static void test_dag(run_t *run)
 {
-    printf("dag\n");
+    check_section("dag", "montaje del grafo, liberación de sucesores y detección de ciclos");
     CHECK(run->jobs[0].n_deps == 0);
     CHECK(run->jobs[1].n_deps == 0);
 
@@ -167,7 +158,7 @@ static void test_dag(run_t *run)
 
 static void test_set_status(run_t *run)
 {
-    printf("job_set_status y agregación\n");
+    check_section("job_set_status y agregación", "cada job finished sube el conteo y stage/run se agregan sin pisarse bajo el candado");
     omp_set_lock(&run->lock);
     CHECK(job_set_status(run, 0, ST_RUNNING) == 0);
     CHECK(job_set_status(run, 0, ST_QUEUED) == -1);
@@ -184,6 +175,7 @@ static void test_set_status(run_t *run)
 
 int main(void)
 {
+    check_header("core", "estados de run/stage/job, condiciones de salto y reglas del DAG — el contrato del modelo");
     test_status();
     test_condition();
     run_t *run = test_model();
@@ -192,9 +184,6 @@ int main(void)
         test_set_status(run);
         run_destroy(run);
     }
-    printf("\n%d de %d verificaciones pasaron\n", g_checks - g_failures, g_checks);
-    if (g_failures == 0) {
-        return EXIT_SUCCESS;
-    }
-    return EXIT_FAILURE;
+    check_summary("core — modelo");
+    return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

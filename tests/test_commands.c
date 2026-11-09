@@ -10,20 +10,12 @@
 #include <string.h>
 #include <time.h>
 
+#include "check.h"
+
 #define BODY_BYTES 2048
 #define WAIT_LIMIT_MS 3000
 
-static int g_failures = 0;
-static int g_checks = 0;
 
-
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);  \
-        }                                                             \
-    } while (0)
 
 static scheduler_t g_scheduler;
 static registry_t g_registry;
@@ -104,13 +96,15 @@ static int run_yaml(const char *yaml, char *body){
     return command_execute(&command, yaml, strlen(yaml), body, BODY_BYTES);
 }
 
-int main(void){
+int main(void)
+{
+    check_header("commands", "comandos del servidor sobre runs reales: formato exacto de respuestas");
     char body[BODY_BYTES];
 
     CHECK(registry_init(&g_registry) == 0);
     CHECK(scheduler_start(&g_scheduler, 1, slow_runner, NULL) == 0);
 
-    printf("empty registry\n");
+    check_section("empty registry", "STATUS/LIST/CANCEL sobre el registro vacío: errores limpios, sin runs falsos");
     CHECK(run_command(C_LIST, 0, body) == 1);
     CHECK(strcmp(body, "no runs") == 0);
     CHECK(run_command(C_STATUS, 1, body) == 0);
@@ -118,7 +112,7 @@ int main(void){
     CHECK(run_command(C_CANCEL, 1, body) == 0);
     CHECK(strstr(body, "not found") != NULL);
 
-    printf("status, list and cancel of real runs\n");
+    check_section("status, list and cancel of real runs", "STATUS/LIST/CANCEL sobre runs vivos: formato exacto y estados consistentes");
     uint64_t first = 0;
     uint64_t second = 0;
     CHECK(registry_submit(&g_registry, &g_scheduler, make_pipeline(), &first) == 0);
@@ -146,7 +140,7 @@ int main(void){
     CHECK(run_command(C_CANCEL, first, body) == 0);
     CHECK(strstr(body, "already finished") != NULL);
 
-    printf("submit\n");
+    check_section("submit", "SUBMIT válido e inválido: id único, cuerpo correcto y exit codes");
     const char *valid =
         "name: from-yaml\n"
         "stages:\n"
@@ -183,9 +177,5 @@ int main(void){
     scheduler_stop(&g_scheduler);
     registry_destroy(&g_registry);
 
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    if(g_failures == 0){
-        return EXIT_SUCCESS;
-    }
-    return EXIT_FAILURE;
+    return check_summary("commands — STATUS, LIST y SUBMIT: el texto que recibe el cliente es la interfaz");
 }

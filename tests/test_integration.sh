@@ -30,11 +30,12 @@ check() {
     CHECKS=$((CHECKS + 1))
 
     if "$@"; then
+        echo "  ✔ $description"
         return 0
     fi
 
     FAILURES=$((FAILURES + 1))
-    echo "  FAIL $description"
+    echo "  ✘ FALLA $description"
 }
 
 # Compare float: compare_floats val1 op val2
@@ -584,5 +585,5 @@ check "no connections after shutdown" [ $? -ne 0 ]
 
 
 echo
-echo "$((CHECKS - FAILURES)) of $CHECKS checks passed"
+echo "✔ integration — servidor real + cliente en vivo: $((CHECKS - FAILURES)) de $CHECKS checks pasaron$([ "$FAILURES" -eq 0 ] && echo ' — todo verde')"
 [ "$FAILURES" -eq 0 ]
