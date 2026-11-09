@@ -10,22 +10,14 @@
 #include <string.h>
 #include <time.h>
 
+#include "check.h"
+
 #define N_AGENTS 3
 #define WIDE_JOBS 6
 #define MANY_RUNS 20
 #define WAIT_LIMIT_MS 5000
 
-static int g_failures = 0;
-static int g_checks = 0;
 
-
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);  \
-        }                                                             \
-    } while (0)
 
 typedef struct {
     long ms;
@@ -87,7 +79,7 @@ static bool wait_finished(run_t *run)
 
 static void test_status_and_list(void)
 {
-    printf("status and list\n");
+    check_section("status and list", "STATUS y LIST reflejan el estado real del run");
     fake_ctx_t ctx = { .ms = 20 };
     scheduler_t scheduler;
     registry_t registry;
@@ -135,7 +127,7 @@ static void test_status_and_list(void)
 
 static void test_cancel(void)
 {
-    printf("cancel\n");
+    check_section("cancel", "CANCEL termina los steps vivos y los pendientes quedan canceled");
     fake_ctx_t ctx = { .ms = 50 };
     scheduler_t scheduler;
     registry_t registry;
@@ -166,7 +158,7 @@ static void test_cancel(void)
 
 static void test_concurrent_submit(void)
 {
-    printf("concurrent submits get unique ids\n");
+    check_section("concurrent submits get unique ids", "submits simultáneos: nunca dos runs con el mismo id");
     fake_ctx_t ctx = { .ms = 1 };
     scheduler_t scheduler;
     registry_t registry;
@@ -228,7 +220,7 @@ static double elapsed_ms(const struct timespec *start){
 }
 
 static void test_cancel_all(void){
-    printf("cancel all: shutdown stops unfinished runs\n");
+    check_section("cancel all: shutdown stops unfinished runs", "SHUTDOWN detiene el trabajo de inmediato (no bloquea)");
     fake_ctx_t ctx = { .ms = 100 };
     scheduler_t scheduler;
     registry_t registry;
@@ -275,7 +267,7 @@ static void test_cancel_all(void){
 }
 
 static void test_cancel_all_skips_finished(void){
-    printf("cancel all leaves finished runs alone\n");
+    check_section("cancel all leaves finished runs alone", "lo ya terminado no se toca ni cambia de estado");
     fake_ctx_t ctx = { .ms = 1 };
     scheduler_t scheduler;
     registry_t registry;
@@ -303,14 +295,11 @@ static void test_cancel_all_skips_finished(void){
 
 int main(void)
 {
+    check_header("registry", "acciones sobre runs vivos: STATUS, CANCEL, LIST y SHUTDOWN");
     test_status_and_list();
     test_cancel();
     test_concurrent_submit();
     test_cancel_all();
     test_cancel_all_skips_finished();
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    if (g_failures == 0) {
-        return EXIT_SUCCESS;
-    }
-    return EXIT_FAILURE;
+    return check_summary("registry — registro, cancelación y apagado de runs reales");
 }

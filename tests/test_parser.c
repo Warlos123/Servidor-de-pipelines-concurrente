@@ -6,17 +6,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static int g_failures = 0;
-static int g_checks = 0;
+#include "check.h"
 
 
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-        }                                                             \
-    } while (0)
 
 
 static pipeline_t *parse(const char *text, error_list_t *errors){
@@ -57,7 +49,7 @@ static void expect_error(const char *text, const char *piece){
 }
 
 static void test_loading(void){
-    printf("loading the YAML\n");
+    check_section("loading the YAML", "libyaml carga el archivo y reporta los errores de sintaxis con línea");
 
     expect_error("", "the YAML is empty");
     expect_error("# only a comment\n", "the YAML is empty");
@@ -105,7 +97,7 @@ static const char *VALID =
 
 
 static void test_valid_pipeline(void){
-    printf("valid pipeline\n");
+    check_section("valid pipeline", "un YAML correcto produce el run exacto esperado");
     error_list_t errors = {0};
     pipeline_t *pipeline = parse(VALID, &errors);
 
@@ -164,7 +156,7 @@ static void test_valid_pipeline(void){
 
 
 static void test_structure_errors(void){
-    printf("structure errors\n");
+    check_section("structure errors", "claves desconocidas, tipos y tope de tiempo inválido se rechazan");
 
     expect_error("name: x\n", "line 1: pipeline without 'stages'");
     expect_error("stages: build\n", "line 1: 'stages' must be a list");
@@ -179,7 +171,7 @@ static void test_structure_errors(void){
 
 
 static void test_value_errors(void){
-    printf("step and value errors\n");
+    check_section("step and value errors", "tareas/valores de step mal formados se rechazan");
     const char *start = "stages:\n- stage: a\n  jobs:\n  - job: j\n";
     char text[512];
 
@@ -208,7 +200,7 @@ static void test_value_errors(void){
 
 
 static void test_unknown_keys(void){
-    printf("unknown keys\n");
+    check_section("unknown keys", "cada clave desconocida advierte la línea exacta");
     const char *text =
         "trigger: main\n"
         "stages:\n"
@@ -230,7 +222,7 @@ static void test_unknown_keys(void){
 
 
 static void test_duplicates_and_references(void){
-    printf("duplicate names and unknown references\n");
+    check_section("duplicate names and unknown references", "nombres repetidos y referencias a stages inexistentes");
     const char *text =
         "stages:\n"
         "- stage: build\n"
@@ -255,7 +247,7 @@ static void test_duplicates_and_references(void){
 
 
 static void test_cycles(void){
-    printf("dependency cycles\n");
+    check_section("dependency cycles", "ciclos en dependsOn no se cuelgan: se detectan y rechazan");
 
     //Jobs: a <-> b, and a job that depends on itself.
     expect_error(
@@ -296,7 +288,7 @@ static void test_cycles(void){
 
 
 static void test_artifacts(void){
-    printf("artifacts\n");
+    check_section("artifacts", "publish duplicado y referencias a jobs que no terminan antes");
 
     //Valid: download from the previous stage, from an ancestor job in the same stage,
     //and from an earlier step of the same job.
@@ -357,7 +349,7 @@ static void test_artifacts(void){
 
 
 static void test_all_errors_reported(void){
-    printf("parser and validator errors in one answer\n");
+    check_section("parser and validator errors in one answer", "deben salir TODOS los errores juntos, no el primero");
     error_list_t errors = {0};
     pipeline_t *pipeline = parse(
         "stages:\n"
@@ -378,7 +370,9 @@ static void test_all_errors_reported(void){
 
 
 
-int main(void){
+int main(void)
+{
+    check_header("parser", "carga de YAML y validación: se rechaza lo malo antes de ejecutar");
     test_loading();
     test_valid_pipeline();
     test_structure_errors();
@@ -389,6 +383,5 @@ int main(void){
     test_artifacts();
     test_all_errors_reported();
 
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    return g_failures != 0;
+    return check_summary("parser — libyaml + validador: YAML a run, con todos los errores juntos");
 }

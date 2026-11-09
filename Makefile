@@ -66,11 +66,14 @@ $(BIN)/test_protocol: $(BUILD)/test_protocol.o $(OBJS_NET) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 test: all
-	@echo "Ejecutando suite de pruebas local..."
+	@echo "═══ SUITE DE PRUEBAS · 9 suites unitarias + 1 de integración"
+	@echo ""
 	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry && \
 	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol && \
 	$(BIN)/test_determinism && $(BIN)/test_variables && $(BIN)/test_tasks_determinism && \
 	bash tests/test_integration.sh
+	@echo ""
+	@echo "═══ SUITE COMPLETA — revisa el ✔/✘ final de cada sesión arriba; cualquier ✘ FALLO marca el exit code"
 
 # --- Pattern rules for each source directory ---
 
@@ -115,12 +118,17 @@ clean:
 
 
 test-race:
-	@echo "--- Running race test WITH protection ---"
+	@echo "═══ race test · fase 1: CON protección (no debe perder ninguna línea)"
 	$(MAKE) clean > /dev/null
 	$(MAKE) $(BIN)/test_race_logs > /dev/null
 	$(BIN)/test_race_logs
-	@echo "--- Running race test WITHOUT protection ---"
+	@echo ""
+	@echo "═══ race test · fase 2: SIN protección (-DSIN_PROTECCION) — el ABORT final es el resultado esperado: es la evidencia de la carrera"
 	$(MAKE) clean > /dev/null
 	$(MAKE) SIN_PROTECCION=1 $(BIN)/test_race_logs > /dev/null
 	-$(BIN)/test_race_logs
+	@echo ""
+	@echo "✔ race test completado: la carrera se observa solo sin protección (diapositiva «Laboratorio de la carrera»)"
 	$(MAKE) clean > /dev/null
+	$(MAKE) > /dev/null 2>&1
+	@echo "  binarios regenerados — el ambiente queda listo para seguir"

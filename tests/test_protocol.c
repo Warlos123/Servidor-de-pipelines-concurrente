@@ -9,17 +9,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-static int g_failures = 0;
-static int g_checks = 0;
+#include "check.h"
 
 
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-        }                                                             \
-    } while (0)
 
 
 static void expect_invalid(const char *line, const char *reason){
@@ -35,7 +27,7 @@ static void expect_invalid(const char *line, const char *reason){
 
 
 static void test_valid_commands(void){
-    printf("valid commands\n");
+    check_section("valid commands", "las 6 órdenes se parsean con argumentos correctos");
     command_t command;
 
     CHECK(protocol_parse("LIST", &command) == 0 && command.type == C_LIST);
@@ -60,7 +52,7 @@ static void test_valid_commands(void){
 
 
 static void test_logs(void){
-    printf("LOGS variants\n");
+    check_section("LOGS variants", "LOGS con job, FOLLOW y combinaciones");
     command_t command;
 
     CHECK(protocol_parse("LOGS 1", &command) == 0);
@@ -98,7 +90,7 @@ static void test_logs(void){
 
 
 static void test_invalid_commands(void){
-    printf("malformed lines\n");
+    check_section("malformed lines", "líneas incompletas o vacías se rechazan sin romperse");
 
     expect_invalid("", "empty command");
     expect_invalid("    ", "empty command");
@@ -119,7 +111,7 @@ static void test_invalid_commands(void){
 
 
 static void test_invalid_numbers(void){
-    printf("invalid ids and sizes\n");
+    check_section("invalid ids and sizes", "ids no numéricos y longitudes negativas o infladas");
 
     expect_invalid("STATUS 0", "invalid id");
     expect_invalid("STATUS -3", "invalid id");
@@ -135,7 +127,7 @@ static void test_invalid_numbers(void){
 
 
 static void test_too_many_words(void){
-    printf("too many words\n");
+    check_section("too many words", "argumentos de más se rechazan");
 
     expect_invalid("LOGS 1 a b c d e f g h", "too many arguments");
 }
@@ -185,7 +177,7 @@ static void expect_bad_header(const char *raw){
 
 
 static void test_responses(void){
-    printf("response framing\n");
+    check_section("response framing", "cada respuesta es OK/ERR + n bytes exactos");
 
     round_trip(1, "7");
     round_trip(0, "invalid id");
@@ -204,7 +196,9 @@ static void test_responses(void){
 }
 
 
-int main(void){
+int main(void)
+{
+    check_header("protocol", "línea de comando del cliente y encapsulado de respuestas");
     test_valid_commands();
     test_logs();
     test_invalid_commands();
@@ -212,6 +206,5 @@ int main(void){
     test_too_many_words();
     test_responses();
 
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    return g_failures != 0;
+    return check_summary("protocol — parseo y framing de comandos: OK/ERR + n bytes");
 }

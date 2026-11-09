@@ -4,6 +4,9 @@
 #include "builtin_tasks.h"
 #include "job_context.h"
 #include "logstore.h"
+
+#include "check.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -118,7 +121,7 @@ int main(void) {
                  "%s/hist_%d.csv", TEST_WORKSPACE, 1 << i);
     }
 
-    printf("Running WordCount determinism test...\n");
+    check_section("WordCount", "corpus LCG, 1/2/4/8 hilos: la salida debe ser idéntica en todas las pasadas");
     for (int i = 0; i < 4; i++) {
         kv_t inputs[] = {
             {"file", data_file},
@@ -135,7 +138,7 @@ int main(void) {
         }
     }
 
-    printf("Running Histogram determinism test...\n");
+    check_section("Histogram", "256 bins por pasada, N bins fijos: el CSV debe ser idéntico a 1/2/4/8 hilos");
     for (int i = 0; i < 4; i++) {
         kv_t inputs[] = {
             {"file", data_file},
@@ -152,7 +155,7 @@ int main(void) {
         }
     }
 
-    printf("Comparing WordCount outputs...\n");
+    check_section("comparaciones WordCount", "1 vs 2, 1 vs 4 y 1 vs 8 hilos: byte a byte");
     for (int i = 1; i < 4; i++) {
         if (compare_files(wc_outputs[0], wc_outputs[i]) != 0) {
             printf("  FAIL: wc_1.txt and wc_%s.txt differ!\n", threads[i]);
@@ -162,7 +165,7 @@ int main(void) {
         }
     }
 
-    printf("Comparing Histogram outputs...\n");
+    check_section("comparaciones Histogram", "mismo corpus, mismo orden de fusión: byte a byte");
     for (int i = 1; i < 4; i++) {
         if (compare_files(hist_outputs[0], hist_outputs[i]) != 0) {
             printf("  FAIL: hist_1.csv and hist_%s.csv differ!\n", threads[i]);
@@ -190,7 +193,7 @@ int main(void) {
         }
     }
 
-    printf("Comparing WordCount top-3 outputs...\n");
+    check_section("comparaciones top-3", "el ranking de las 10 palabras más frecuentes: idéntico entre hilos");
     for (int i = 1; i < 4; i++) {
         if (compare_files(wc_top[0], wc_top[i]) != 0) {
             printf("  FAIL: wct_1.txt and wct_%s.txt differ!\n", threads[i]);
@@ -203,10 +206,10 @@ int main(void) {
     log_destroy(&log);
 
     if (total_failures == 0) {
-        printf("\nSUCCESS: All tasks are deterministic.\n");
+        printf("\n✔ tasks-determinism: los 8 checks pasaron — WordCount e Histogram son byte-idénticos con 1/2/4/8 hilos\n");
         return 0;
     }
 
-    printf("\nFAIL: Determinism check failed with %d mismatches.\n", total_failures);
+    printf("\n✘ tasks-determinism: %d mismatch(es) — la salida cambió con el número de hilos\n", total_failures);
     return 1;
 }

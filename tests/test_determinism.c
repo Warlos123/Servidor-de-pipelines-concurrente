@@ -9,6 +9,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "check.h"
+
 #define FAN_JOBS 32
 #define JOIN_JOBS 8
 #define RACE_AGENTS 8
@@ -17,17 +19,6 @@
 #define DET_RUNS 100
 #define MAX_JOBS 64
 #define WAIT_LIMIT_MS 5000
-
-static int g_failures = 0;
-static int g_checks = 0;
-
-#define CHECK(cond) do {                                              \
-        g_checks++;                                                   \
-        if (!(cond)) {                                                \
-            g_failures++;                                             \
-            printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);  \
-        }                                                             \
-    } while (0)
 
 typedef struct {
     atomic_int runs[MAX_JOBS];
@@ -97,7 +88,7 @@ static pipeline_t *make_fan_join(void){
 }
 
 static void test_each_job_runs_once(void){
-    printf("race: every job runs exactly once (%d runs, %d agents)\n", RACE_RUNS, RACE_AGENTS);
+    check_section("race: every job runs exactly once", "50 corridas con 8 agentes y retardos aleatorios: ningún job se pierde ni se repite");
     counter_ctx_t ctx;
     scheduler_t scheduler;
     CHECK(scheduler_start(&scheduler, RACE_AGENTS, counting_runner, &ctx) == 0);
@@ -204,7 +195,7 @@ static pipeline_t *make_mixed(void){
 }
 
 static void test_same_result_every_run(void){
-    printf("determinism: same final states in %d runs with random timing\n", DET_RUNS);
+    check_section("determinism: same final states", "100 corridas con usleep al azar: los estados finales son siempre idénticos");
     counter_ctx_t ctx;
     atomic_init(&ctx.seed, 12345u);
     scheduler_t scheduler;
@@ -253,12 +244,10 @@ static void test_same_result_every_run(void){
     scheduler_stop(&scheduler);
 }
 
-int main(void){
+int main(void)
+{
+    check_header("determinism", "cada job corre exactamente una vez y nada cambia con el plan del SO");
     test_each_job_runs_once();
     test_same_result_every_run();
-    printf("\n%d of %d checks passed\n", g_checks - g_failures, g_checks);
-    if(g_failures == 0){
-        return EXIT_SUCCESS;
-    }
-    return EXIT_FAILURE;
+    return check_summary("determinism — cada job una sola vez y estados idénticos con retardos aleatorios");
 }
