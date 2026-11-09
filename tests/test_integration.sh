@@ -39,7 +39,11 @@ check() {
 
 # Compare float: compare_floats val1 op val2
 compare_floats() {
-    awk -v v1="$1" -v op="$2" -v v2="$3" 'BEGIN {if (v1 + 0 op v2 + 0) exit 0; exit 1}'
+    awk -v v1="$1" -v op="$2" -v v2="$3" 'BEGIN {
+        if (op == ">=") exit !(v1 + 0 >= v2 + 0)
+        if (op == "<=") exit !(v1 + 0 <= v2 + 0)
+        exit 1
+    }'
 }
 
 # Calculate elapsed: calc_elapsed end start
