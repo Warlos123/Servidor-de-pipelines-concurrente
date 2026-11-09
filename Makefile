@@ -1,0 +1,134 @@
+CC      = gcc
+STD    ?= $(shell $(CC) -std=c23 -E -x c /dev/null >/dev/null 2>&1 && echo c23 || ($(CC) -std=c2x -E -x c /dev/null >/dev/null 2>&1 && echo c2x || echo c11))
+CFLAGS  = -std=$(STD) -Wall -Wextra -pedantic -O2 -pthread -fopenmp -Iinclude
+BUILD   = build
+BIN     = bin
+
+ifeq ($(SIN_PROTECCION),1)
+CFLAGS += -DSIN_PROTECCION
+endif
+
+OBJS_CORE   = $(BUILD)/model.o $(BUILD)/state.o $(BUILD)/dag.o \
+              $(BUILD)/job_queue.o $(BUILD)/scheduler.o $(BUILD)/registry.o \
+              $(BUILD)/logstore.o
+OBJS_NET    = $(BUILD)/net_util.o $(BUILD)/protocol.o
+OBJS_SERVER = $(BUILD)/commands.o $(BUILD)/pipelined.o
+OBJS_YAML   = $(BUILD)/yaml_parser.o $(BUILD)/validator.o
+OBJS_EXEC   = $(BUILD)/exec_job_execute.o $(BUILD)/artifacts.o
+OBJS_TASKS  = $(BUILD)/task_sleep_cpu.o $(BUILD)/task_data.o
+
+ALL_BINS    = $(BIN)/pipelined $(BIN)/pipectl \
+$(BIN)/test_core $(BIN)/test_scheduler $(BIN)/test_registry \
+$(BIN)/test_commands $(BIN)/test_parser $(BIN)/test_protocol \
+$(BIN)/test_determinism $(BIN)/test_variables $(BIN)/test_race_logs \
+$(BIN)/test_tasks_determinism $(BIN)/gen_corpus
+
+all: $(ALL_BINS)
+
+$(BIN)/test_race_logs: $(BUILD)/test_race_logs.o $(BUILD)/logstore.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_tasks_determinism: $(BUILD)/test_tasks_determinism.o $(OBJS_TASKS) $(BUILD)/logstore.o $(BUILD)/exec_job_execute.o $(BUILD)/artifacts.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/gen_corpus: bench/gen_corpus.c | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(BIN)/pipelined: $(BUILD)/pipelined.o $(OBJS_NET) $(OBJS_CORE) \
+                  $(OBJS_EXEC) $(OBJS_TASKS) $(OBJS_YAML) $(BUILD)/commands.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
+
+$(BIN)/pipectl: $(BUILD)/pipectl.o $(OBJS_NET) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_core: $(BUILD)/test_core.o $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_scheduler: $(BUILD)/test_scheduler.o $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_commands: $(BUILD)/test_commands.o $(BUILD)/commands.o $(OBJS_YAML) $(OBJS_NET) $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
+
+$(BIN)/test_variables: $(BUILD)/test_variables.o $(OBJS_CORE) $(OBJS_EXEC) $(OBJS_TASKS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_determinism: $(BUILD)/test_determinism.o $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_parser: $(BUILD)/test_parser.o $(OBJS_YAML) $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lyaml
+
+$(BIN)/test_registry: $(BUILD)/test_registry.o $(OBJS_CORE) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/test_protocol: $(BUILD)/test_protocol.o $(OBJS_NET) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+test: all
+	@echo "═══ SUITE DE PRUEBAS · 9 suites unitarias + 1 de integración"
+	@echo ""
+	@$(BIN)/test_core && $(BIN)/test_scheduler && $(BIN)/test_registry && \
+	$(BIN)/test_commands && $(BIN)/test_parser && $(BIN)/test_protocol && \
+	$(BIN)/test_determinism && $(BIN)/test_variables && $(BIN)/test_tasks_determinism && \
+	bash tests/test_integration.sh
+	@echo ""
+	@echo "═══ SUITE COMPLETA — revisa el ✔/✘ final de cada sesión arriba; cualquier ✘ FALLO marca el exit code"
+
+# --- Pattern rules for each source directory ---
+
+$(BUILD)/%.o: src/server/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/%.o: src/core/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/%.o: src/client/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/%.o: tests/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# --- Explicit rules for src/exec (prefix "exec_" to avoid name collisions) ---
+
+$(BUILD)/exec_job_execute.o: src/exec/job_execute.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/logstore.o: src/exec/logstore.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/artifacts.o: src/exec/artifacts.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# --- Explicit rules for src/tasks ---
+
+$(BUILD)/task_sleep_cpu.o: src/tasks/task_sleep_cpu.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/task_data.o: src/tasks/task_data.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD) $(BIN):
+	mkdir -p $@
+
+clean:
+	rm -rf $(BUILD) $(BIN)
+
+.PHONY: all test clean test-race
+
+
+test-race:
+	@echo "═══ race test · fase 1: CON protección (no debe perder ninguna línea)"
+	$(MAKE) clean > /dev/null
+	$(MAKE) $(BIN)/test_race_logs > /dev/null
+	$(BIN)/test_race_logs
+	@echo ""
+	@echo "═══ race test · fase 2: SIN protección (-DSIN_PROTECCION) — el ABORT final es el resultado esperado: es la evidencia de la carrera"
+	$(MAKE) clean > /dev/null
+	$(MAKE) SIN_PROTECCION=1 $(BIN)/test_race_logs > /dev/null
+	-$(BIN)/test_race_logs
+	@echo ""
+	@echo "✔ race test completado: la carrera se observa solo sin protección (diapositiva «Laboratorio de la carrera»)"
+	$(MAKE) clean > /dev/null
+	$(MAKE) > /dev/null 2>&1
+	@echo "  binarios regenerados — el ambiente queda listo para seguir"
