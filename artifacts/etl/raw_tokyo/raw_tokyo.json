@@ -1,0 +1,51 @@
+{
+  "ciudad": "Tokio",
+  "pais": "Japon",
+  "url": "https://api.open-meteo.com/v1/forecast?latitude=35.6762&longitude=139.6503&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7",
+  "extraido_en": "2026-11-11T00:58:02.628557+00:00",
+  "dias": [
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17"
+  ],
+  "t_max": [
+    14.5,
+    17.3,
+    19.9,
+    15.7,
+    17.2,
+    20.4,
+    13.2
+  ],
+  "t_min": [
+    6.8,
+    7.6,
+    8.2,
+    9.2,
+    12.0,
+    10.0,
+    8.4
+  ],
+  "precip": [
+    0.0,
+    0.0,
+    0.0,
+    0.8,
+    7.3,
+    2.3,
+    0.2
+  ],
+  "viento": [
+    5.1,
+    4.3,
+    4.3,
+    7.3,
+    8.2,
+    17.1,
+    9.3
+  ]
+}

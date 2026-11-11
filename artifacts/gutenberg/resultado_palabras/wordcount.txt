@@ -1,0 +1,23 @@
+total_words: 128720
+distinct_words: 6837
+top_20:
+  the: 4665
+  to: 4325
+  of: 3846
+  and: 3767
+  her: 2284
+  i: 2122
+  a: 2038
+  in: 1994
+  was: 1875
+  she: 1751
+  that: 1646
+  it: 1590
+  not: 1500
+  you: 1376
+  he: 1358
+  his: 1303
+  be: 1264
+  as: 1229
+  had: 1186
+  with: 1103

@@ -18,3 +18,23 @@ core.*
 *.swp
 *~
 .DS_Store
+
+# Pipeline run artifacts: keep only textual evidence, regenerate the rest
+# (see artifacts/README.md)
+artifacts/**
+!artifacts/**/
+!artifacts/README.md
+!artifacts/**/*.txt
+!artifacts/**/*.csv
+!artifacts/**/*.json
+!artifacts/**/*.html
+!artifacts/**/*.png
+# el libro es re-descargable de gutenberg.org (738 KB, dominio publico)
+artifacts/gutenberg/libro_txt/
+# corpus sinteticos generados dentro de los pipelines (regenerables, sin contenido)
+artifacts/fan_out_fan_in/corpus_shared/
+# base SQLite binaria (regenerable; el resumen.csv si se versiona)
+artifacts/etl/etl_db/
+
+# cache de bytecodes de los benchmarks
+bench/__pycache__/

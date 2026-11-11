@@ -1,0 +1,51 @@
+{
+  "ciudad": "San Jose",
+  "pais": "Costa Rica",
+  "url": "https://api.open-meteo.com/v1/forecast?latitude=9.9281&longitude=-84.0907&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7",
+  "extraido_en": "2026-11-11T00:58:02.623755+00:00",
+  "dias": [
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16"
+  ],
+  "t_max": [
+    26.8,
+    28.1,
+    27.5,
+    25.4,
+    26.8,
+    26.9,
+    26.4
+  ],
+  "t_min": [
+    19.8,
+    19.0,
+    17.9,
+    16.2,
+    16.4,
+    17.1,
+    18.0
+  ],
+  "precip": [
+    2.8,
+    5.0,
+    5.6,
+    5.9,
+    7.8,
+    5.1,
+    3.0
+  ],
+  "viento": [
+    10.8,
+    11.7,
+    12.5,
+    9.7,
+    12.0,
+    11.0,
+    11.2
+  ]
+}

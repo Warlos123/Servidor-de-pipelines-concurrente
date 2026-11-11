@@ -1,0 +1,13 @@
+total_words: 24000
+distinct_words: 12
+top_10:
+  paralelo: 2077
+  resultado: 2031
+  artefacto: 2022
+  datos: 2015
+  grafo: 2013
+  etapa: 1999
+  tarea: 1995
+  concurrente: 1986
+  nodo: 1973
+  trabajo: 1967
