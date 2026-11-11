@@ -1,0 +1,86 @@
+# Fan-out / fan-in: un corpus compartido por 3 jobs en paralelo y un reporte final.
+#
+# preparar : genera el corpus de texto y lo publica.
+# analizar : 3 jobs independientes corren EN PARALELO sobre el mismo corpus:
+#              - word_count  → cuenta palabras
+#              - histogram   → histograma de bytes
+#              - cpu_hash    → computo CPU determinista (checksum)
+# integrar : UN job descarga los tres resultados y arma el reporte final.
+#
+# Uso: pipectl <host> <port> SUBMIT examples/fan_out_fan_in.yaml
+name: fan_out_fan_in_demo
+stages:
+- stage: preparar
+  jobs:
+  - job: generar_corpus
+    steps:
+    - script: |
+        python3 -c "
+        import random, string
+        words = ['pipeline','concurrente','paralelo','datos','tarea','etapa',
+                 'trabajo','resultado','artefacto','nodo','grafo','dag']
+        lines = [' '.join(random.choices(words, k=8)) for _ in range(3000)]
+        print('\n'.join(lines))
+        " > corpus.txt
+    - script: |
+        echo "Corpus generado. Lineas: $(wc -l < corpus.txt)"
+    - publish: corpus.txt
+      artifact: corpus_shared
+
+- stage: analizar
+  dependsOn: preparar
+  jobs:
+  - job: word_count
+    steps:
+    - download: corpus_shared
+      path: .
+    - task: WordCount@1
+      inputs:
+        file: corpus.txt
+        threads: 2
+        output: words.txt
+        top: 10
+    - publish: words.txt
+      artifact: resultado_words
+
+  - job: histogram
+    steps:
+    - download: corpus_shared
+      path: .
+    - task: Histogram@1
+      inputs:
+        file: corpus.txt
+        bins: 32
+        threads: 2
+        output: hist.csv
+    - publish: hist.csv
+      artifact: resultado_hist
+
+  - job: cpu_hash
+    steps:
+    - task: Cpu@1
+      inputs:
+        iterations: 50000000
+        seed: 42
+    - script: echo "Computo CPU completado (checksum del corpus)"
+
+- stage: integrar
+  dependsOn: analizar
+  jobs:
+  - job: reporte_final
+    steps:
+    - download: resultado_words
+      path: .
+    - download: resultado_hist
+      path: .
+    - script: |
+        echo "============================================"
+        echo "  REPORTE FINAL - fan-out / fan-in demo"
+        echo "============================================"
+        echo ""
+        echo "--- Top palabras ---"
+        cat words.txt
+        echo ""
+        echo "--- Histograma (primeras 5 filas) ---"
+        head -5 hist.csv
+        echo "============================================"

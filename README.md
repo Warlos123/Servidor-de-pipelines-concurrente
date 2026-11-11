@@ -42,19 +42,32 @@ Building the project:
 
 ## Example pipelines
 
-The `examples/` folder has pipelines ready to submit:
+The `examples/` folder has pipelines that do real work (or prove engine semantics):
 
-- `example.yaml`: two stages with artifacts, WordCount and Histogram.
-    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/example.yaml`
+- `gutenberg.yaml`: downloads a real book from Project Gutenberg, analyzes it with
+  WordCount/Histogram tasks plus a stats script in three parallel jobs, and consolidates
+  a report. Also demonstrates `variables`, `$(VAR)` substitution and `timeoutInSeconds`.
+    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/gutenberg.yaml`
+- `ci_cd.yaml`: a full CI/CD flow with a real git server: a bare repo acts as the
+  remote (`origin.git`), jobs clone from it, push two feature branches in parallel,
+  fetch + merge with `--no-ff`, gcc build, functional tests (exit 1 on failure),
+  and a tagged release. The remote travels between stages as an artifact because
+  jobs don't share a filesystem; every push/fetch is a real `git push`/`git fetch`.
+    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/ci_cd.yaml`
+- `fan_out_fan_in.yaml`: generates a corpus and fans it out to three parallel jobs
+  (WordCount, Histogram, CPU hash), then fans in to a final report.
+    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/fan_out_fan_in.yaml`
+- `etl.yaml`: a full ETL on live data from a public API (Open-Meteo, no key): three
+  parallel extract jobs (venv + requests), three parallel transform jobs (dedup,
+  date conversion, null filtering), a data-quality gate, `condition: failed()`
+  quarantine and `condition: always()` cleanup, SQLite load with SQL aggregates,
+  and matplotlib PNG charts + self-contained HTML dashboard. Set `FORZAR_FALLO: "1"`
+  in the variables to watch the quarantine path abort the pipeline.
+    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/etl.yaml`
 - `invalid.yaml`: invalid on purpose; the server rejects it and returns every error.
     - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/invalid.yaml`
-- `follow.yaml`: prints one line per second for 15 seconds, for following the logs and for canceling.
-    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/follow.yaml`
-    - `./bin/pipectl 127.0.0.1 9000 LOGS <id> FOLLOW`
-    - `./bin/pipectl 127.0.0.1 9000 CANCEL <id>`
-- `wide.yaml`: six independent jobs of 2 seconds. Submit it several times at once to see more jobs than agents.
-    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/wide.yaml & ./bin/pipectl 127.0.0.1 9000 SUBMIT examples/wide.yaml`
-    - `./bin/pipectl 127.0.0.1 9000 LIST`
+- Sample artifacts produced by real runs of these pipelines are kept in `artifacts/`
+  (textual evidence only; see `artifacts/README.md`).
 
 ## Run the tests
 
