@@ -1,15 +1,15 @@
-# Analisis de "Orgullo y Prejuicio" de Project Gutenberg con WordCount@1,
-# Histogram@1 y estadisticas de shell.
+# Analysis of "Pride and Prejudice" from Project Gutenberg with WordCount@1,
+# Histogram@1 and shell statistics.
 #
-# Etapas:
-#   descargar  → curl del libro (~700 KB)
-#   analizar   → tres jobs EN PARALELO:
-#                  palabras   : WordCount@1 (top 20 palabras)
-#                  histograma : Histogram@1 (distribucion de bytes, 32 bins)
-#                  estadisticas: awk/sort → lineas, chars, oraciones, capitulos
-#   reportar   → consolida los tres artefactos en un reporte legible
+# Stages:
+#   descargar  → curl of the book (~700 KB)
+#   analizar   → three jobs IN PARALLEL:
+#                  palabras    : WordCount@1 (top 20 words)
+#                  histograma  : byte distribution histogram, 32 bins
+#                  estadisticas: awk/sort → lines, chars, sentences, chapters
+#   reportar   → consolidates the three artifacts into a readable report
 #
-# Uso: pipectl <host> <port> SUBMIT examples/gutenberg.yaml
+# Usage: pipectl <host> <port> SUBMIT examples/gutenberg.yaml
 name: gutenberg_analysis
 variables:
   URL: "https://www.gutenberg.org/files/1342/1342-0.txt"
@@ -17,23 +17,23 @@ variables:
   TOP: "20"
 
 stages:
-# ─── Etapa 1: descarga ───────────────────────────────────────────────────────
+# ─── Stage 1: download ───────────────────────────────────────────────────────
 - stage: descargar
   jobs:
   - job: fetch
-    # Timeout del job por si la descarga se cuelga; complementa el --max-time de curl.
+    # Job timeout in case the download hangs; complements the curl --max-time.
     timeoutInSeconds: 120
     steps:
-    - script: echo "Descargando Orgullo y Prejuicio (Project Gutenberg)..."
+    - script: echo "Downloading Pride and Prejudice (Project Gutenberg)..."
     - script: curl -sSf --max-time 60 -o $(LIBRO) "$(URL)"
     - script: |
         BYTES=$(wc -c < $(LIBRO))
         LINES=$(wc -l < $(LIBRO))
-        echo "Descarga completa: ${BYTES} bytes, ${LINES} lineas."
+        echo "Download complete: ${BYTES} bytes, ${LINES} lines."
     - publish: $(LIBRO)
       artifact: libro_txt
 
-# ─── Etapa 2: tres analisis en paralelo ──────────────────────────────────────
+# ─── Stage 2: three analyses in parallel ─────────────────────────────────────
 - stage: analizar
   dependsOn: descargar
   jobs:
@@ -69,44 +69,44 @@ stages:
     - download: libro_txt
       path: .
     - script: |
-        echo "Calculando estadisticas del texto..."
+        echo "Computing text statistics..."
 
         TOTAL_LINEAS=$(wc -l < $(LIBRO))
         TOTAL_PALABRAS=$(wc -w < $(LIBRO))
         TOTAL_CHARS=$(wc -c < $(LIBRO))
 
-        # Oraciones: cuenta puntos, signos de exclamacion e interrogacion
+        # Sentences: counts periods, exclamation and question marks
         ORACIONES=$(grep -o '[.!?]' $(LIBRO) | wc -l)
 
-        # Capitulos: la edicion usa "CHAPTER I." y tambien "Chapter I."
+        # Chapters: this edition uses "CHAPTER I." and also "Chapter I."
         CAPITULOS=$(grep -icE "^[[:space:]]*chapter [IVXL]+" $(LIBRO) || true)
 
-        # Palabra mas larga: solo el cuerpo del libro, entre los marcadores
-        # START/END de Gutenberg. El tr incluye \r porque el archivo usa CRLF.
+        # Longest word: only the book body, between the Gutenberg START/END
+        # markers. The tr handles \r because the file uses CRLF.
         PALABRA_LARGA=$(awk '/START OF THE PROJECT GUTENBERG/{on=1; next} /END OF THE PROJECT GUTENBERG/{exit} on' $(LIBRO) \
             | tr -s ' \t\r\n' '\n' \
-            | awk '{ if(length($0)>max){max=length($0); w=$0}} END{print w, "(", max, "caracteres)"}')
+            | awk '{ if(length($0)>max){max=length($0); w=$0}} END{print w, "(", max, "chars)"}')
 
-        # Lineas en blanco vs con texto
+        # Blank lines vs text lines
         LINEAS_VACIAS=$(grep -c "^$" $(LIBRO) || true)
         LINEAS_TEXTO=$((TOTAL_LINEAS - LINEAS_VACIAS))
 
         cat > estadisticas.txt << EOF
-        === ESTADISTICAS: Orgullo y Prejuicio ===
-        Lineas totales   : ${TOTAL_LINEAS}
-        Lineas con texto : ${LINEAS_TEXTO}
-        Lineas en blanco : ${LINEAS_VACIAS}
-        Total palabras   : ${TOTAL_PALABRAS}
-        Total caracteres : ${TOTAL_CHARS}
-        Oraciones aprox. : ${ORACIONES}
-        Capitulos        : ${CAPITULOS}
-        Palabra mas larga: ${PALABRA_LARGA}
+        === STATS: Pride and Prejudice ===
+        Total lines     : ${TOTAL_LINEAS}
+        Text lines      : ${LINEAS_TEXTO}
+        Blank lines     : ${LINEAS_VACIAS}
+        Total words     : ${TOTAL_PALABRAS}
+        Total chars     : ${TOTAL_CHARS}
+        Sentences approx: ${ORACIONES}
+        Chapters        : ${CAPITULOS}
+        Longest word    : ${PALABRA_LARGA}
         EOF
         cat estadisticas.txt
     - publish: estadisticas.txt
       artifact: resultado_estadisticas
 
-# ─── Etapa 3: reporte final ───────────────────────────────────────────────────
+# ─── Stage 3: final report ───────────────────────────────────────────────────
 - stage: reportar
   dependsOn: analizar
   jobs:
@@ -121,17 +121,17 @@ stages:
     - script: |
         echo ""
         echo "========================================================"
-        echo "   REPORTE FINAL — Orgullo y Prejuicio (Jane Austen)"
+        echo "   FINAL REPORT — Pride and Prejudice (Jane Austen)"
         echo "========================================================"
         echo ""
         cat estadisticas.txt
         echo ""
-        echo "--- Top $(TOP) palabras mas frecuentes ---"
+        echo "--- Top $(TOP) most frequent words ---"
         cat wordcount.txt
         echo ""
-        echo "--- Histograma de bytes (primeras 10 filas del CSV) ---"
+        echo "--- Byte histogram (first 10 CSV rows) ---"
         head -10 histograma.csv
         echo ""
         echo "========================================================"
-        echo "   Pipeline completado exitosamente."
+        echo "   Pipeline completed successfully."
         echo "========================================================"

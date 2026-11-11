@@ -1,13 +1,13 @@
-# Fan-out / fan-in: un corpus compartido por 3 jobs en paralelo y un reporte final.
+# Fan-out / fan-in: one corpus shared by 3 parallel jobs and a final report.
 #
-# preparar : genera el corpus de texto y lo publica.
-# analizar : 3 jobs independientes corren EN PARALELO sobre el mismo corpus:
-#              - word_count  → cuenta palabras
-#              - histogram   → histograma de bytes
-#              - cpu_hash    → computo CPU determinista (checksum)
-# integrar : UN job descarga los tres resultados y arma el reporte final.
+# preparar : generates the text corpus and publishes it.
+# analizar : 3 independent jobs run IN PARALLEL over the same corpus:
+#              - word_count  → word count
+#              - histogram   → byte histogram
+#              - cpu_hash    → deterministic CPU work (checksum)
+# integrar : ONE job downloads the three results and builds the final report.
 #
-# Uso: pipectl <host> <port> SUBMIT examples/fan_out_fan_in.yaml
+# Usage: pipectl <host> <port> SUBMIT examples/fan_out_fan_in.yaml
 name: fan_out_fan_in_demo
 stages:
 - stage: preparar
@@ -23,7 +23,7 @@ stages:
         print('\n'.join(lines))
         " > corpus.txt
     - script: |
-        echo "Corpus generado. Lineas: $(wc -l < corpus.txt)"
+        echo "Corpus generated. Lines: $(wc -l < corpus.txt)"
     - publish: corpus.txt
       artifact: corpus_shared
 
@@ -62,7 +62,7 @@ stages:
       inputs:
         iterations: 50000000
         seed: 42
-    - script: echo "Computo CPU completado (checksum del corpus)"
+    - script: echo "CPU work completed (corpus checksum)"
 
 - stage: integrar
   dependsOn: analizar
@@ -75,12 +75,12 @@ stages:
       path: .
     - script: |
         echo "============================================"
-        echo "  REPORTE FINAL - fan-out / fan-in demo"
+        echo "  FINAL REPORT - fan-out / fan-in demo"
         echo "============================================"
         echo ""
-        echo "--- Top palabras ---"
+        echo "--- Top words ---"
         cat words.txt
         echo ""
-        echo "--- Histograma (primeras 5 filas) ---"
+        echo "--- Histogram (first 5 rows) ---"
         head -5 hist.csv
         echo "============================================"
