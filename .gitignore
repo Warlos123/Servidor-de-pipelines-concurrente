@@ -29,6 +29,8 @@ artifacts/**
 !artifacts/**/*.json
 !artifacts/**/*.html
 !artifacts/**/*.png
+!artifacts/**/*.svg
+!artifacts/**/*.md
 # el libro es re-descargable de gutenberg.org (738 KB, dominio publico)
 artifacts/gutenberg/libro_txt/
 # corpus sinteticos generados dentro de los pipelines (regenerables, sin contenido)

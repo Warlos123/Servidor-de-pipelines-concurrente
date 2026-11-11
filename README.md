@@ -66,6 +66,15 @@ The `examples/` folder has pipelines that do real work (or prove engine semantic
     - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/etl.yaml`
 - `invalid.yaml`: invalid on purpose; the server rejects it and returns every error.
     - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/invalid.yaml`
+- `self_ci.yaml`: the server builds, tests and benchmarks ITSELF: it clones the
+  repo into the run (clean copy, no `build/`/`bin/`), does `make` from scratch,
+  runs the 9 unit suites + integration + race test in parallel, executes the
+  whole bench battery (wide, deep, data, combined — the nested `pipelined`
+  servers run on ephemeral ports inside the jobs) and fans in to an analysis
+  with `bench/analyze.py` + SVG plots with `bench/plot.py`. The default
+  variables reproduce the full battery (`bench/run.sh all`); for a quick smoke
+  run use `BENCH_REPS=3`, lists `1 2 4` and `BENCH_SIZE=64M`.
+    - `./bin/pipectl 127.0.0.1 9000 SUBMIT examples/self_ci.yaml`
 - Sample artifacts produced by real runs of these pipelines are kept in `artifacts/`
   (textual evidence only; see `artifacts/README.md`).
 

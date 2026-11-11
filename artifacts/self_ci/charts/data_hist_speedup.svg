@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 420" style="background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;">
+  <rect width="700" height="420" fill="#ffffff" rx="8"/>
+  <text x="350.0" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="#1f2937">Speedup S(p) - DATA_HIST</text>
+  <line x1="80" y1="360.0" x2="560" y2="360.0" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="68" y="364.0" text-anchor="end" font-size="11" fill="#6b7280">0.0</text>
+  <line x1="80" y1="300.0" x2="560" y2="300.0" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="68" y="304.0" text-anchor="end" font-size="11" fill="#6b7280">1.8</text>
+  <line x1="80" y1="240.0" x2="560" y2="240.0" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="68" y="244.0" text-anchor="end" font-size="11" fill="#6b7280">3.7</text>
+  <line x1="80" y1="180.0" x2="560" y2="180.0" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="68" y="184.0" text-anchor="end" font-size="11" fill="#6b7280">5.5</text>
+  <line x1="80" y1="120.0" x2="560" y2="120.0" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="68" y="124.0" text-anchor="end" font-size="11" fill="#6b7280">7.4</text>
+  <line x1="80" y1="60.0" x2="560" y2="60.0" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="68" y="64.0" text-anchor="end" font-size="11" fill="#6b7280">9.2</text>
+  <line x1="80.0" y1="60" x2="80.0" y2="360" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="80.0" y="380" text-anchor="middle" font-size="12" font-weight="500" fill="#374151">1</text>
+  <line x1="240.0" y1="60" x2="240.0" y2="360" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="240.0" y="380" text-anchor="middle" font-size="12" font-weight="500" fill="#374151">2</text>
+  <line x1="400.0" y1="60" x2="400.0" y2="360" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="400.0" y="380" text-anchor="middle" font-size="12" font-weight="500" fill="#374151">4</text>
+  <line x1="560.0" y1="60" x2="560.0" y2="360" stroke="#f3f4f6" stroke-width="1"/>
+  <text x="560.0" y="380" text-anchor="middle" font-size="12" font-weight="500" fill="#374151">8</text>
+  <text x="320.0" y="405" text-anchor="middle" font-size="12" fill="#4b5563">Número de hilos OpenMP</text>
+  <text x="25" y="210.0" text-anchor="middle" transform="rotate(-90 25 210.0)" font-size="12" fill="#4b5563">Speedup S(p)</text>
+  <line x1="80" y1="60" x2="80" y2="360" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="80" y1="360" x2="560" y2="360" stroke="#9ca3af" stroke-width="1.5"/>
+  <path d="M 80.0 327.4 L 240.0 315.4 L 400.0 315.9 L 560.0 317.3" fill="none" stroke="#ea580c" stroke-width="2.5"/>
+  <circle cx="80.0" cy="327.4" r="4.5" fill="#ea580c" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="240.0" cy="315.4" r="4.5" fill="#ea580c" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="400.0" cy="315.9" r="4.5" fill="#ea580c" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="560.0" cy="317.3" r="4.5" fill="#ea580c" stroke="#ffffff" stroke-width="1.5"/>
+  <line x1="575" y1="70" x2="595" y2="70" stroke="#ea580c" stroke-width="2.5"/>
+  <circle cx="585" cy="70" r="3.5" fill="#ea580c"/>
+  <text x="602" y="74" font-size="11" fill="#374151">Local</text>
+  <path d="M 80.0 327.4 L 240.0 294.8 L 400.0 229.6 L 560.0 99.1" fill="none" stroke="#9ca3af" stroke-width="2.5" stroke-dasharray="5,5"/>
+  <circle cx="80.0" cy="327.4" r="4.5" fill="#9ca3af" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="240.0" cy="294.8" r="4.5" fill="#9ca3af" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="400.0" cy="229.6" r="4.5" fill="#9ca3af" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="560.0" cy="99.1" r="4.5" fill="#9ca3af" stroke="#ffffff" stroke-width="1.5"/>
+  <line x1="575" y1="94" x2="595" y2="94" stroke="#9ca3af" stroke-width="2.5"/>
+  <circle cx="585" cy="94" r="3.5" fill="#9ca3af"/>
+  <text x="602" y="98" font-size="11" fill="#374151">Ideal (Lineal)</text>
+</svg>
