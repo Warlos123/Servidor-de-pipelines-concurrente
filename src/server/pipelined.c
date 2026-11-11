@@ -10,6 +10,7 @@
 
 
 #include <errno.h>
+#include <dirent.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -274,6 +275,45 @@ static int parse_args(int argc, char **argv, unsigned short *port, size_t *agent
     return 0;
 }
 
+// Returns the highest numeric directory name under <workdir>/runs and
+// <workdir>/artifacts, or 0 when neither directory exists (fresh workdir).
+// Run ids name those directories, so a restarted server continues from here
+// instead of reusing ids that already hold artifacts from previous runs.
+static uint64_t scan_max_run_id(const char *workdir)
+{
+    uint64_t max_id = 0;
+    const char *subdirs[] = { "runs", "artifacts" };
+
+    for (size_t i = 0; i < sizeof subdirs / sizeof subdirs[0]; i++) {
+        char path[PATH_MAX];
+        if (snprintf(path, sizeof path, "%s/%s", workdir, subdirs[i])
+            >= (int)sizeof path)
+            continue;
+
+        DIR *dir = opendir(path);
+        if (dir == NULL)
+            continue; // missing directory: nothing to scan
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_name[0] == '\0' || entry->d_name[0] == '.')
+                continue;
+
+            errno = 0;
+            char *end = NULL;
+            uint64_t id = strtoull(entry->d_name, &end, 10);
+            if (end == entry->d_name || *end != '\0' || errno == ERANGE)
+                continue; // not a plain run-id name
+
+            if (id > max_id)
+                max_id = id;
+        }
+        closedir(dir);
+    }
+
+    return max_id;
+}
+
 int main(int argc, char **argv)
 {
 
@@ -302,6 +342,11 @@ int main(int argc, char **argv)
         sem_destroy(&g_counting_sem);
         return EXIT_FAILURE;
     }
+
+    //Continue the run-id counter from the workdir: runs/<id> and artifacts/<id>
+    //from previous runs name those directories, so a restarted server must not
+    //hand out the same ids again (submits would mix old and new artifacts).
+    registry_set_base_id(&g_registry, scan_max_run_id(work_directory));
 
     if(scheduler_start(&g_scheduler, agents, execute_job, (void *)work_directory) < 0){
         fprintf(stderr, "ERROR: can't start scheduler\n");
