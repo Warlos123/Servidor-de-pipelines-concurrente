@@ -1,0 +1,312 @@
+# CI/CD con git real y servidor remoto de verdad.
+#
+# Flujo:
+#   init      -> crea el remoto: repo bare origin.git (el "servidor git"),
+#               clona, commit inicial en main y git push origin main
+#   features  -> DOS JOBS EN PARALELO:
+#               clonan de origin, crean feature/greet y feature/math
+#               y hacen git push origin (cada job publica su estado del server)
+#   integrate -> clona, git fetch de ambos remotos, merges --no-ff,
+#               gcc build y git push del main integrado
+#   test      -> ejecuta el binario compilado y verifica cada funcion
+#   release   -> clona, git tag v1.0.0 + push del tag, empaqueta tarball
+#
+# El server viaja como artefacto porque los jobs no comparten sistema de
+# archivos; cada push/fetch es un git push/fetch real contra un remoto bare.
+#
+# Uso: pipectl <host> <port> SUBMIT examples/ci_cd.yaml
+name: ci_cd_pipeline
+
+stages:
+
+# --- Stage 1: Servidor remoto + commit inicial --------------------------------
+- stage: init
+  jobs:
+  - job: setup_repo
+    steps:
+    - script: |
+        set -e
+        echo "=== [INIT] Creando servidor git remoto (bare) ==="
+        git -c init.defaultBranch=main init --bare origin.git
+        git clone origin.git app 2>&1 | grep -v "warning:" || true
+        cd app
+        git config user.email "ci@pipeline.local"
+        git config user.name "Pipeline Bot"
+        printf '%s\n' \
+          '#include <stdio.h>' \
+          '' \
+          'int main(void) {' \
+          '    printf("CI/CD Pipeline Demo - build inicial\n");' \
+          '    return 0;' \
+          '}' > main.c
+        printf '%s\n' \
+          'CC     = gcc' \
+          'CFLAGS = -Wall -Wextra -pedantic' \
+          'SRCS   = $(wildcard *.c)' \
+          'TARGET = ci_demo' \
+          'all: $(TARGET)' \
+          '$(TARGET): $(SRCS)' \
+          '	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)' \
+          'clean:' \
+          '	rm -f $(TARGET)' > Makefile
+        git add main.c Makefile
+        git commit -m "chore: initial commit en branch main"
+        echo ""
+        echo "Git log inicial:"
+        git log --oneline
+        git push origin main
+        echo "main publicado en origin."
+    - publish: origin.git
+      artifact: servidor_git
+
+# --- Stage 2: Features en paralelo (2 ramas de feature) -----------------------
+- stage: features
+  dependsOn: init
+  jobs:
+
+  # Dev A: branch feature/greet
+  - job: feature_greet
+    steps:
+    - download: servidor_git
+      path: .
+    - script: |
+        set -e
+        echo "=== [DEV A] Trabajando en feature/greet ==="
+        git clone origin.git app
+        cd app
+        git config user.email "dev-a@pipeline.local"
+        git config user.name "Dev A"
+        git checkout -b feature/greet
+        printf '%s\n' \
+          '#ifndef GREET_H' \
+          '#define GREET_H' \
+          'void greet(const char *name);' \
+          'void greet_with_title(const char *title, const char *name);' \
+          '#endif' > greet.h
+        printf '%s\n' \
+          '#include <stdio.h>' \
+          '#include "greet.h"' \
+          '' \
+          'void greet(const char *name) {' \
+          '    printf("Hello, %s! Welcome to the CI/CD pipeline.\n", name);' \
+          '}' \
+          '' \
+          'void greet_with_title(const char *title, const char *name) {' \
+          '    printf("Hello, %s %s!\n", title, name);' \
+          '}' > greet.c
+        git add greet.h greet.c
+        git commit -m "feat: agregar modulo greet con greet() y greet_with_title()"
+        echo ""
+        echo "Branch feature/greet:"
+        git log --oneline
+        git diff main..feature/greet --stat
+        git push origin feature/greet
+    - publish: origin.git
+      artifact: servidor_greet
+
+  # Dev B: branch feature/math
+  - job: feature_math
+    steps:
+    - download: servidor_git
+      path: .
+    - script: |
+        set -e
+        echo "=== [DEV B] Trabajando en feature/math ==="
+        git clone origin.git app
+        cd app
+        git config user.email "dev-b@pipeline.local"
+        git config user.name "Dev B"
+        git checkout -b feature/math
+        printf '%s\n' \
+          '#ifndef MATH_OPS_H' \
+          '#define MATH_OPS_H' \
+          'int add(int a, int b);' \
+          'int multiply(int a, int b);' \
+          'int factorial(int n);' \
+          'int fibonacci(int n);' \
+          '#endif' > math_ops.h
+        printf '%s\n' \
+          '#include "math_ops.h"' \
+          '' \
+          'int add(int a, int b)      { return a + b; }' \
+          'int multiply(int a, int b) { return a * b; }' \
+          '' \
+          'int factorial(int n) {' \
+          '    if (n <= 1) return 1;' \
+          '    return n * factorial(n - 1);' \
+          '}' \
+          '' \
+          'int fibonacci(int n) {' \
+          '    if (n <= 1) return n;' \
+          '    return fibonacci(n - 1) + fibonacci(n - 2);' \
+          '}' > math_ops.c
+        git add math_ops.h math_ops.c
+        git commit -m "feat: agregar modulo math_ops (add, multiply, factorial, fibonacci)"
+        echo ""
+        echo "Branch feature/math:"
+        git log --oneline
+        git diff main..feature/math --stat
+        git push origin feature/math
+    - publish: origin.git
+      artifact: servidor_math
+
+# --- Stage 3: Integracion -> Build --------------------------------------------
+- stage: integrate
+  dependsOn: features
+  jobs:
+  - job: merge_and_build
+    steps:
+    - download: servidor_greet
+      path: servidor_greet
+    - download: servidor_math
+      path: servidor_math
+    - script: |
+        set -e
+        echo "=== [INTEGRATE] Fetch de remotos, merges y build ==="
+        git clone servidor_greet/origin.git app
+        cd app
+        git config user.email "ci@pipeline.local"
+        git config user.name "Pipeline Bot"
+        git remote add math_server ../servidor_math/origin.git
+        echo "--- Fetching feature/greet desde origin..."
+        git fetch origin
+        echo "--- Fetching feature/math desde math_server..."
+        git fetch math_server
+        echo ""
+        echo "Branches disponibles:"
+        git branch -a
+        echo ""
+        echo "--- Merging feature/greet (Pull Request)..."
+        git merge origin/feature/greet --no-ff -m "Merge pull request: feature/greet -> main"
+        echo "--- Merging feature/math (Pull Request)..."
+        git merge math_server/feature/math --no-ff -m "Merge pull request: feature/math -> main"
+        echo ""
+        echo "=== Git log --graph (historial completo) ==="
+        git log --graph --oneline --all
+        echo ""
+        printf '%s\n' \
+          '#include <stdio.h>' \
+          '#include "greet.h"' \
+          '#include "math_ops.h"' \
+          '' \
+          'int main(void) {' \
+          '    printf("=== CI/CD Pipeline Demo v1.0 ===\n\n");' \
+          '    greet("Pipeline");' \
+          '    greet_with_title("Dr.", "Compiler");' \
+          '    printf("\n");' \
+          '    printf("2 + 3    = %d\n", add(2, 3));' \
+          '    printf("4 x 5    = %d\n", multiply(4, 5));' \
+          '    printf("7!       = %d\n", factorial(7));' \
+          '    printf("fib(10)  = %d\n", fibonacci(10));' \
+          '    return 0;' \
+          '}' > main.c
+        git add main.c
+        git commit -m "build: integrar feature/greet y feature/math en main.c"
+        echo "--- Publicando main integrado en origin..."
+        git push origin main
+        echo ""
+        echo "=== Compilando con gcc ==="
+        gcc -Wall -Wextra -pedantic -o ci_demo main.c greet.c math_ops.c
+        echo "Build exitoso. Binario: ci_demo"
+        ls -lh ci_demo
+        cp ci_demo ../ci_demo
+    - publish: servidor_greet/origin.git
+      artifact: servidor_integrado
+    - publish: ci_demo
+      artifact: app_binary
+
+# --- Stage 4: Tests automatizados del binario ---------------------------------
+- stage: test
+  dependsOn: integrate
+  jobs:
+  - job: run_tests
+    steps:
+    - download: app_binary
+      path: .
+    - script: |
+        echo "=== [TEST] Ejecutando suite de tests ==="
+        chmod +x ci_demo
+        OUTPUT=$(./ci_demo)
+        echo "Output del programa:"
+        echo "--------------------"
+        echo "$OUTPUT"
+        echo "--------------------"
+        echo ""
+        PASS=0
+        FAIL=0
+        check() {
+            if echo "$OUTPUT" | grep -qF "$2"; then
+                echo "PASS: $1"
+                PASS=$((PASS+1))
+            else
+                echo "FAIL: $1  (esperaba: $2)"
+                FAIL=$((FAIL+1))
+            fi
+        }
+        check "Header v1.0"       "CI/CD Pipeline Demo v1.0"
+        check "greet(Pipeline)"   "Hello, Pipeline"
+        check "greet_with_title"  "Dr. Compiler"
+        check "add(2,3)=5"        "2 + 3    = 5"
+        check "multiply(4,5)=20"  "4 x 5    = 20"
+        check "factorial(7)=5040" "7!       = 5040"
+        check "fibonacci(10)=55"  "fib(10)  = 55"
+        echo ""
+        echo "Resultado: $PASS pasados, $FAIL fallados."
+        if [ "$FAIL" -gt 0 ]; then
+            echo "TESTS FALLARON. Abortando pipeline."
+            exit 1
+        fi
+        echo "Todos los tests pasaron. Listo para release."
+
+# --- Stage 5: Release ---------------------------------------------------------
+- stage: release
+  dependsOn: test
+  jobs:
+  - job: tag_and_package
+    steps:
+    - download: servidor_integrado
+      path: servidor_integrado
+    - download: app_binary
+      path: .
+    - script: |
+        set -e
+        echo "=== [RELEASE] Creando release v1.0.0 ==="
+        git clone servidor_integrado/origin.git app
+        cd app
+        git config user.email "ci@pipeline.local"
+        git config user.name "Pipeline Bot"
+        git tag -a v1.0.0 -m "Release v1.0.0: greet + math_ops"
+        echo ""
+        echo "--- Publicando el tag en origin..."
+        git push origin v1.0.0
+        echo ""
+        echo "Tags:"
+        git tag -l -n1
+        echo ""
+        cp ../ci_demo .
+        mkdir -p dist/bin dist/src
+        cp ci_demo      dist/bin/
+        cp *.c *.h      dist/src/
+        printf '%s\n' \
+          '# Release v1.0.0' \
+          '' \
+          '## Nuevas features' \
+          '- **greet**: greet() y greet_with_title()' \
+          '- **math_ops**: add(), multiply(), factorial(), fibonacci()' \
+          '' \
+          '## CI/CD' \
+          '- 2 ramas de feature con git push a un remoto bare (origin.git)' \
+          '- Merges --no-ff y main integrado publicados en origin' \
+          '- Build: gcc -Wall -Wextra -pedantic (0 warnings)' \
+          '- Tests: 7/7 pasados' \
+          '- Tag v1.0.0 pusheado a origin' > dist/RELEASE_NOTES.md
+        cd ..
+        tar -czf ci_demo_v1.0.0.tar.gz -C app/dist .
+        echo "Contenido del release:"
+        tar -tzf ci_demo_v1.0.0.tar.gz
+        echo ""
+        echo "=== Release v1.0.0 lista. Pipeline completado exitosamente. ==="
+    - publish: servidor_integrado/origin.git
+      artifact: servidor_final
+    - publish: ci_demo_v1.0.0.tar.gz
+      artifact: release_v1_0_0

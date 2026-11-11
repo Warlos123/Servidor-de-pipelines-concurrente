@@ -1,0 +1,137 @@
+# Analisis de "Orgullo y Prejuicio" de Project Gutenberg con WordCount@1,
+# Histogram@1 y estadisticas de shell.
+#
+# Etapas:
+#   descargar  → curl del libro (~700 KB)
+#   analizar   → tres jobs EN PARALELO:
+#                  palabras   : WordCount@1 (top 20 palabras)
+#                  histograma : Histogram@1 (distribucion de bytes, 32 bins)
+#                  estadisticas: awk/sort → lineas, chars, oraciones, capitulos
+#   reportar   → consolida los tres artefactos en un reporte legible
+#
+# Uso: pipectl <host> <port> SUBMIT examples/gutenberg.yaml
+name: gutenberg_analysis
+variables:
+  URL: "https://www.gutenberg.org/files/1342/1342-0.txt"
+  LIBRO: "pride_and_prejudice.txt"
+  TOP: "20"
+
+stages:
+# ─── Etapa 1: descarga ───────────────────────────────────────────────────────
+- stage: descargar
+  jobs:
+  - job: fetch
+    # Timeout del job por si la descarga se cuelga; complementa el --max-time de curl.
+    timeoutInSeconds: 120
+    steps:
+    - script: echo "Descargando Orgullo y Prejuicio (Project Gutenberg)..."
+    - script: curl -sSf --max-time 60 -o $(LIBRO) "$(URL)"
+    - script: |
+        BYTES=$(wc -c < $(LIBRO))
+        LINES=$(wc -l < $(LIBRO))
+        echo "Descarga completa: ${BYTES} bytes, ${LINES} lineas."
+    - publish: $(LIBRO)
+      artifact: libro_txt
+
+# ─── Etapa 2: tres analisis en paralelo ──────────────────────────────────────
+- stage: analizar
+  dependsOn: descargar
+  jobs:
+
+  - job: palabras
+    steps:
+    - download: libro_txt
+      path: .
+    - task: WordCount@1
+      inputs:
+        file: $(LIBRO)
+        threads: 4
+        output: wordcount.txt
+        top: $(TOP)
+    - publish: wordcount.txt
+      artifact: resultado_palabras
+
+  - job: histograma
+    steps:
+    - download: libro_txt
+      path: .
+    - task: Histogram@1
+      inputs:
+        file: $(LIBRO)
+        bins: 32
+        threads: 4
+        output: histograma.csv
+    - publish: histograma.csv
+      artifact: resultado_histograma
+
+  - job: estadisticas
+    steps:
+    - download: libro_txt
+      path: .
+    - script: |
+        echo "Calculando estadisticas del texto..."
+
+        TOTAL_LINEAS=$(wc -l < $(LIBRO))
+        TOTAL_PALABRAS=$(wc -w < $(LIBRO))
+        TOTAL_CHARS=$(wc -c < $(LIBRO))
+
+        # Oraciones: cuenta puntos, signos de exclamacion e interrogacion
+        ORACIONES=$(grep -o '[.!?]' $(LIBRO) | wc -l)
+
+        # Capitulos: la edicion usa "CHAPTER I." y tambien "Chapter I."
+        CAPITULOS=$(grep -icE "^[[:space:]]*chapter [IVXL]+" $(LIBRO) || true)
+
+        # Palabra mas larga: solo el cuerpo del libro, entre los marcadores
+        # START/END de Gutenberg. El tr incluye \r porque el archivo usa CRLF.
+        PALABRA_LARGA=$(awk '/START OF THE PROJECT GUTENBERG/{on=1; next} /END OF THE PROJECT GUTENBERG/{exit} on' $(LIBRO) \
+            | tr -s ' \t\r\n' '\n' \
+            | awk '{ if(length($0)>max){max=length($0); w=$0}} END{print w, "(", max, "caracteres)"}')
+
+        # Lineas en blanco vs con texto
+        LINEAS_VACIAS=$(grep -c "^$" $(LIBRO) || true)
+        LINEAS_TEXTO=$((TOTAL_LINEAS - LINEAS_VACIAS))
+
+        cat > estadisticas.txt << EOF
+        === ESTADISTICAS: Orgullo y Prejuicio ===
+        Lineas totales   : ${TOTAL_LINEAS}
+        Lineas con texto : ${LINEAS_TEXTO}
+        Lineas en blanco : ${LINEAS_VACIAS}
+        Total palabras   : ${TOTAL_PALABRAS}
+        Total caracteres : ${TOTAL_CHARS}
+        Oraciones aprox. : ${ORACIONES}
+        Capitulos        : ${CAPITULOS}
+        Palabra mas larga: ${PALABRA_LARGA}
+        EOF
+        cat estadisticas.txt
+    - publish: estadisticas.txt
+      artifact: resultado_estadisticas
+
+# ─── Etapa 3: reporte final ───────────────────────────────────────────────────
+- stage: reportar
+  dependsOn: analizar
+  jobs:
+  - job: consolidar
+    steps:
+    - download: resultado_palabras
+      path: .
+    - download: resultado_histograma
+      path: .
+    - download: resultado_estadisticas
+      path: .
+    - script: |
+        echo ""
+        echo "========================================================"
+        echo "   REPORTE FINAL — Orgullo y Prejuicio (Jane Austen)"
+        echo "========================================================"
+        echo ""
+        cat estadisticas.txt
+        echo ""
+        echo "--- Top $(TOP) palabras mas frecuentes ---"
+        cat wordcount.txt
+        echo ""
+        echo "--- Histograma de bytes (primeras 10 filas del CSV) ---"
+        head -10 histograma.csv
+        echo ""
+        echo "========================================================"
+        echo "   Pipeline completado exitosamente."
+        echo "========================================================"

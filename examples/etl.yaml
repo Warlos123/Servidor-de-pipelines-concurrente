@@ -1,0 +1,525 @@
+# ETL meteorologico sobre la API publica de Open-Meteo (sin API key).
+# Corre on-demand con SUBMIT (sin cron).
+#
+# Flujo:
+#   extraer    -> TRES JOBS EN PARALELO (San Jose, Madrid, Tokio):
+#                 venv + pip install requests -> GET a la API -> JSON crudo
+#   transformar-> TRES JOBS EN PARALELO (limpieza por ciudad):
+#                 dedup, conversion de fechas ISO->DD/MM/YYYY, descarte de nulos,
+#                 calculo de temperatura media, reporte de calidad por ciudad.
+#                 luego:
+#                   control_calidad : valida las 3 salidas (falla si no cumplen SLA)
+#                   cuarentena      : condition: failed(), corre si la validacion falla
+#                   limpieza_final  : condition: always(), bitacora que siempre corre
+#   cargar     -> SQLite (stdlib sqlite3): tablas observaciones + agregados
+#                 (AVG/SUM/MAX en SQL), export a resumen.csv
+#   visualizar -> venv + pip install matplotlib: lee la SQLite, genera 2 graficas PNG
+#                 y un dashboard.html autocontenido (PNG embebidos en base64)
+#
+# Con FORZAR_FALLO=1 la validacion corrompe los CSV y el gate rechaza:
+# sirve para verificar cuarentena y el aborto del pipeline.
+#
+# Uso: pipectl <host> <port> SUBMIT examples/etl.yaml
+name: etl_meteorologico
+variables:
+  API_HOST: "api.open-meteo.com"
+  FORZAR_FALLO: "0"
+
+stages:
+# ─── Etapa 1: EXTRACT (3 jobs en paralelo, uno por ciudad) ───────────────────
+- stage: extraer
+  jobs:
+
+  - job: extraer_sanjose
+    timeoutInSeconds: 180
+    steps:
+    - script: |
+        set -e
+        echo "=== [EXTRACT] San Jose, Costa Rica ==="
+        python3 -m venv .venv
+        .venv/bin/pip install --quiet --disable-pip-version-check requests
+        cat > extraer.py << 'PY'
+        import json, requests
+        from datetime import datetime, timezone
+
+        # $(API_HOST) lo sustituye el motor con la variable del pipeline
+        URL = "https://$(API_HOST)/v1/forecast?latitude=9.9281&longitude=-84.0907&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7"
+
+        r = requests.get(URL, timeout=30)
+        r.raise_for_status()
+        daily = r.json()["daily"]
+        payload = {
+            "ciudad": "San Jose",
+            "pais": "Costa Rica",
+            "url": URL,
+            "extraido_en": datetime.now(timezone.utc).isoformat(),
+            "dias": daily["time"],
+            "t_max": daily["temperature_2m_max"],
+            "t_min": daily["temperature_2m_min"],
+            "precip": daily["precipitation_sum"],
+            "viento": daily["wind_speed_10m_max"],
+        }
+        with open("raw_sanjose.json", "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Extraidos {len(payload['dias'])} dias. Rango: {payload['dias'][0]} .. {payload['dias'][-1]}")
+        print(f"San Jose hoy: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
+        PY
+        .venv/bin/python extraer.py
+    - publish: raw_sanjose.json
+      artifact: raw_sanjose
+
+  - job: extraer_madrid
+    timeoutInSeconds: 180
+    steps:
+    - script: |
+        set -e
+        echo "=== [EXTRACT] Madrid, Espana ==="
+        python3 -m venv .venv
+        .venv/bin/pip install --quiet --disable-pip-version-check requests
+        cat > extraer.py << 'PY'
+        import json, requests
+        from datetime import datetime, timezone
+
+        URL = "https://$(API_HOST)/v1/forecast?latitude=40.4168&longitude=-3.7038&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7"
+
+        r = requests.get(URL, timeout=30)
+        r.raise_for_status()
+        daily = r.json()["daily"]
+        payload = {
+            "ciudad": "Madrid",
+            "pais": "Espana",
+            "url": URL,
+            "extraido_en": datetime.now(timezone.utc).isoformat(),
+            "dias": daily["time"],
+            "t_max": daily["temperature_2m_max"],
+            "t_min": daily["temperature_2m_min"],
+            "precip": daily["precipitation_sum"],
+            "viento": daily["wind_speed_10m_max"],
+        }
+        with open("raw_madrid.json", "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Extraidos {len(payload['dias'])} dias. Rango: {payload['dias'][0]} .. {payload['dias'][-1]}")
+        print(f"Madrid hoy: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
+        PY
+        .venv/bin/python extraer.py
+    - publish: raw_madrid.json
+      artifact: raw_madrid
+
+  - job: extraer_tokyo
+    timeoutInSeconds: 180
+    steps:
+    - script: |
+        set -e
+        echo "=== [EXTRACT] Tokio, Japon ==="
+        python3 -m venv .venv
+        .venv/bin/pip install --quiet --disable-pip-version-check requests
+        cat > extraer.py << 'PY'
+        import json, requests
+        from datetime import datetime, timezone
+
+        URL = "https://$(API_HOST)/v1/forecast?latitude=35.6762&longitude=139.6503&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7"
+
+        r = requests.get(URL, timeout=30)
+        r.raise_for_status()
+        daily = r.json()["daily"]
+        payload = {
+            "ciudad": "Tokio",
+            "pais": "Japon",
+            "url": URL,
+            "extraido_en": datetime.now(timezone.utc).isoformat(),
+            "dias": daily["time"],
+            "t_max": daily["temperature_2m_max"],
+            "t_min": daily["temperature_2m_min"],
+            "precip": daily["precipitation_sum"],
+            "viento": daily["wind_speed_10m_max"],
+        }
+        with open("raw_tokyo.json", "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Extraidos {len(payload['dias'])} dias. Rango: {payload['dias'][0]} .. {payload['dias'][-1]}")
+        print(f"Tokio hoy: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
+        PY
+        .venv/bin/python extraer.py
+    - publish: raw_tokyo.json
+      artifact: raw_tokyo
+
+# ─── Etapa 2: TRANSFORM (limpieza por ciudad en paralelo + control de calidad) ─
+- stage: transformar
+  dependsOn: extraer
+  jobs:
+
+  # ---- limpieza: 3 jobs con la misma logica, uno por ciudad (stdlib puro) -----
+  - job: limpiar_sanjose
+    steps:
+    - download: raw_sanjose
+      path: .
+    - script: |
+        set -e
+        echo "=== [TRANSFORM] San Jose: dedup, fechas, nulos, promedios ==="
+        cat > limpiar.py << 'PY'
+        import json, csv, datetime, sys
+
+        SRC, DST, REP = sys.argv[1], sys.argv[2], sys.argv[3]
+        d = json.load(open(SRC))
+        filas, vistas, dups, nulos = [], set(), 0, 0
+        for i, fecha_iso in enumerate(d["dias"]):
+            tmax, tmin = d["t_max"][i], d["t_min"][i]
+            pr, viento = d["precip"][i], d["viento"][i]
+            if None in (tmax, tmin, pr, viento):
+                nulos += 1
+                continue
+            # conversion de fecha: ISO 8601 -> DD/MM/YYYY
+            fecha = datetime.date.fromisoformat(fecha_iso).strftime("%d/%m/%Y")
+            if fecha in vistas:            # dedup por fecha (proteccion ante reintentos)
+                dups += 1
+                continue
+            vistas.add(fecha)
+            tmedia = round((tmax + tmin) / 2, 2)
+            filas.append([fecha, d["ciudad"], tmax, tmin, tmedia, pr, viento])
+        with open(DST, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["fecha", "ciudad", "t_max", "t_min", "t_media", "precip_mm", "viento_kmh"])
+            w.writerows(filas)
+        rep = {"ciudad": d["ciudad"], "extraidas": len(d["dias"]), "duplicadas_descartadas": dups,
+               "nulas_descartadas": nulos, "validas": len(filas)}
+        json.dump(rep, open(REP, "w"), indent=2)
+        print(rep)
+        PY
+        python3 limpiar.py raw_sanjose.json limpia_sanjose.csv calidad_sanjose.json
+        cat limpia_sanjose.csv
+    - publish: limpia_sanjose.csv
+      artifact: limpia_sanjose
+
+  - job: limpiar_madrid
+    steps:
+    - download: raw_madrid
+      path: .
+    - script: |
+        set -e
+        echo "=== [TRANSFORM] Madrid: dedup, fechas, nulos, promedios ==="
+        cat > limpiar.py << 'PY'
+        import json, csv, datetime, sys
+
+        SRC, DST, REP = sys.argv[1], sys.argv[2], sys.argv[3]
+        d = json.load(open(SRC))
+        filas, vistas, dups, nulos = [], set(), 0, 0
+        for i, fecha_iso in enumerate(d["dias"]):
+            tmax, tmin = d["t_max"][i], d["t_min"][i]
+            pr, viento = d["precip"][i], d["viento"][i]
+            if None in (tmax, tmin, pr, viento):
+                nulos += 1
+                continue
+            fecha = datetime.date.fromisoformat(fecha_iso).strftime("%d/%m/%Y")
+            if fecha in vistas:
+                dups += 1
+                continue
+            vistas.add(fecha)
+            tmedia = round((tmax + tmin) / 2, 2)
+            filas.append([fecha, d["ciudad"], tmax, tmin, tmedia, pr, viento])
+        with open(DST, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["fecha", "ciudad", "t_max", "t_min", "t_media", "precip_mm", "viento_kmh"])
+            w.writerows(filas)
+        rep = {"ciudad": d["ciudad"], "extraidas": len(d["dias"]), "duplicadas_descartadas": dups,
+               "nulas_descartadas": nulos, "validas": len(filas)}
+        json.dump(rep, open(REP, "w"), indent=2)
+        print(rep)
+        PY
+        python3 limpiar.py raw_madrid.json limpia_madrid.csv calidad_madrid.json
+        cat limpia_madrid.csv
+    - publish: limpia_madrid.csv
+      artifact: limpia_madrid
+
+  - job: limpiar_tokyo
+    steps:
+    - download: raw_tokyo
+      path: .
+    - script: |
+        set -e
+        echo "=== [TRANSFORM] Tokio: dedup, fechas, nulos, promedios ==="
+        cat > limpiar.py << 'PY'
+        import json, csv, datetime, sys
+
+        SRC, DST, REP = sys.argv[1], sys.argv[2], sys.argv[3]
+        d = json.load(open(SRC))
+        filas, vistas, dups, nulos = [], set(), 0, 0
+        for i, fecha_iso in enumerate(d["dias"]):
+            tmax, tmin = d["t_max"][i], d["t_min"][i]
+            pr, viento = d["precip"][i], d["viento"][i]
+            if None in (tmax, tmin, pr, viento):
+                nulos += 1
+                continue
+            fecha = datetime.date.fromisoformat(fecha_iso).strftime("%d/%m/%Y")
+            if fecha in vistas:
+                dups += 1
+                continue
+            vistas.add(fecha)
+            tmedia = round((tmax + tmin) / 2, 2)
+            filas.append([fecha, d["ciudad"], tmax, tmin, tmedia, pr, viento])
+        with open(DST, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["fecha", "ciudad", "t_max", "t_min", "t_media", "precip_mm", "viento_kmh"])
+            w.writerows(filas)
+        rep = {"ciudad": d["ciudad"], "extraidas": len(d["dias"]), "duplicadas_descartadas": dups,
+               "nulas_descartadas": nulos, "validas": len(filas)}
+        json.dump(rep, open(REP, "w"), indent=2)
+        print(rep)
+        PY
+        python3 limpiar.py raw_tokyo.json limpia_tokyo.csv calidad_tokyo.json
+        cat limpia_tokyo.csv
+    - publish: limpia_tokyo.csv
+      artifact: limpia_tokyo
+
+  # ---- control de calidad: valida las 3 salidas contra el SLA -----------------
+  # Con FORZAR_FALLO=1 corrompe los CSV antes de validar.
+  - job: control_calidad
+    dependsOn: [limpiar_sanjose, limpiar_madrid, limpiar_tokyo]
+    steps:
+    - download: limpia_sanjose
+      path: .
+    - download: limpia_madrid
+      path: .
+    - download: limpia_tokyo
+      path: .
+    - script: |
+        set -e
+        export FORZAR_FALLO="$(FORZAR_FALLO)"
+        echo "=== [QUALITY GATE] Validando SLA de datos (FORZAR_FALLO=$(FORZAR_FALLO)) ==="
+        cat > gate.py << 'PY'
+        import csv, json, os, sys
+        from datetime import datetime, timezone
+
+        CIUDADES = ["sanjose", "madrid", "tokyo"]
+        SLA_FILAS_MIN = 6          # pronostico de 7 dias, toleramos 1 dia nulo por ciudad
+
+        # inyeccion de datos corruptos con FORZAR_FALLO=1
+        if os.environ.get("FORZAR_FALLO") == "1":
+            print(">>> CHAOS: inyectando duplicados y campos vacios en los CSV...")
+            for c in CIUDADES:
+                path = f"limpia_{c}.csv"
+                lineas = open(path).read().rstrip("\n").split("\n")
+                lineas.append(lineas[1])                    # duplicado exacto
+                lineas.append(f"31/02/2026,{c},,,,,")       # fecha imposible + nulos
+                open(path, "w").write("\n".join(lineas) + "\n")
+
+        problemas = []
+        for c in CIUDADES:
+            path = f"limpia_{c}.csv"
+            rows = list(csv.reader(open(path)))
+            header, data = rows[0], rows[1:]
+            ciudades = set(r[1] for r in data)
+            if len(data) < SLA_FILAS_MIN:
+                problemas.append(f"{path}: {len(data)} filas < SLA {SLA_FILAS_MIN}")
+            if len(set((r[0], r[1]) for r in data)) != len(data):
+                problemas.append(f"{path}: duplicados (ciudad, fecha)")
+            for r in data:
+                if any(x == "" for x in r):
+                    problemas.append(f"{path}: campo vacio en {r}")
+                    continue        # no intentar parsear lo que falta
+                try:
+                    datetime.strptime(r[0], "%d/%m/%Y")
+                except ValueError:
+                    problemas.append(f"{path}: fecha invalida -> {r[0]!r}")
+                tmax, tmin, tmedia = float(r[2]), float(r[3]), float(r[4])
+                if abs(tmedia - round((tmax + tmin) / 2, 2)) > 0.01:
+                    problemas.append(f"{path}: t_media inconsistente en {r[0]}")
+            print(f"  {path}: {len(data)} filas, ciudades={ciudades}, header ok={header == ['fecha','ciudad','t_max','t_min','t_media','precip_mm','viento_kmh']}")
+
+        reporte = {
+            "generado_en": datetime.now(timezone.utc).isoformat(),
+            "sla_filas_min": SLA_FILAS_MIN,
+            "resultado": "RECHAZADO" if problemas else "APROBADO",
+            "problemas": problemas,
+        }
+        json.dump(reporte, open("reporte_calidad.json", "w"), indent=2)
+        print(json.dumps(reporte, indent=2))
+        if problemas:
+            print(f"GATE RECHAZADO: {len(problemas)} problemas. Abortando pipeline.")
+            sys.exit(1)
+        print("GATE APROBADO: los datos cumplen el SLA. Continua la carga.")
+        PY
+        python3 gate.py
+    - publish: reporte_calidad.json
+      artifact: reporte_calidad
+
+# ─── Etapa 2b: RESGUARDO (jobs condicionales, en un stage aparte) ─────────────
+# Los stages encadenan implicitamente con todos los jobs del anterior, y un
+# job en skip arrastraria a cargar y visualizar: por eso los condicionales van
+# aqui. El stage usa condition: always() porque la condicion del stage se
+# evalua antes que la del job; con la default (succeeded), un fallo en
+# transformar saltaria este stage y cuarentena nunca correria.
+- stage: resguardar
+  condition: always()
+  jobs:
+
+  # ---- condition: failed(): corre si la validacion fallo ----------------------
+  - job: cuarentena
+    condition: failed()
+    steps:
+    - script: |
+        set -e
+        echo "=== [ROLLBACK] Datos rechazados -> registrando incidente de cuarentena ==="
+        # Los raw_* ya estan en el store de artefactos; aqui solo se registra el incidente.
+        cat > incidente.json << JSON
+        {
+          "tipo": "sla_incumplido",
+          "momento": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "accion": "run abortado; raw_* preservados en el store para re-procesamiento",
+          "gate": "reporte_calidad.json (rechazado)"
+        }
+        JSON
+        echo "Incidente registrado:"
+        cat incidente.json
+    - publish: incidente.json
+      artifact: incidente_cuarentena
+
+  # ---- condition: always(): bitacora del run -----------------------------------
+  - job: limpieza_final
+    condition: always()
+    steps:
+    - script: |
+        echo "=== [CLEANUP] Bitacora del run (condition: always()) ==="
+        {
+          echo "Ejecucion ETL: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Este job corre SIEMPRE: el pipeline termine aprobado, rechazado o abortado."
+          echo "En produccion aqui se limpian venvs, temporales y se notifica a monitoreo."
+        } > bitacora_limpieza.txt
+        cat bitacora_limpieza.txt
+    - publish: bitacora_limpieza.txt
+      artifact: bitacora
+
+# ─── Etapa 3: LOAD (SQLite) ───────────────────────────────────────────────────
+# dependsOn explicito a transformar: no debe depender de resguardar, donde los
+# jobs condicionales pueden quedar en skip.
+- stage: cargar
+  dependsOn: [transformar]
+  jobs:
+  - job: cargar_sqlite
+    steps:
+    - download: limpia_sanjose
+      path: .
+    - download: limpia_madrid
+      path: .
+    - download: limpia_tokyo
+      path: .
+    - script: |
+        set -e
+        echo "=== [LOAD] Construyendo base de datos SQLite ==="
+        cat > cargar.py << 'PY'
+        import csv, sqlite3
+
+        db = sqlite3.connect("etl.db")
+        cur = db.cursor()
+        cur.execute("CREATE TABLE observaciones (ciudad TEXT, fecha TEXT, t_max REAL, t_min REAL, "
+                    "t_media REAL, precip_mm REAL, viento_kmh REAL, PRIMARY KEY (ciudad, fecha))")
+        for c in ["sanjose", "madrid", "tokyo"]:
+            with open(f"limpia_{c}.csv") as f:
+                rows = [(r[1], r[0], r[2], r[3], r[4], r[5], r[6]) for r in csv.reader(f)][1:]
+            cur.executemany("INSERT INTO observaciones VALUES (?,?,?,?,?,?,?)", rows)
+        # agregados calculados POR SQL: promedios, sumas y maximos por ciudad
+        cur.execute("CREATE TABLE agregados AS SELECT ciudad, COUNT(*) AS dias, "
+                    "ROUND(AVG(t_max),2) AS avg_t_max, ROUND(AVG(t_min),2) AS avg_t_min, "
+                    "ROUND(AVG(t_media),2) AS avg_t_media, ROUND(SUM(precip_mm),2) AS total_precip_mm, "
+                    "MAX(viento_kmh) AS max_viento_kmh FROM observaciones GROUP BY ciudad")
+        db.commit()
+        with open("resumen.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["ciudad", "dias", "avg_t_max", "avg_t_min", "avg_t_media", "total_precip_mm", "max_viento_kmh"])
+            w.writerows(cur.execute("SELECT * FROM agregados"))
+        print("Resumen por ciudad (desde SQL):")
+        for r in cur.execute("SELECT * FROM agregados"):
+            print(f"  {r[0]:10s} dias={r[1]} avg_max={r[2]} avg_min={r[3]} avg_media={r[4]} precip_total={r[5]}mm viento_max={r[6]}km/h")
+        print(f"Total filas en observaciones: {cur.execute('SELECT COUNT(*) FROM observaciones').fetchone()[0]}")
+        db.close()
+        PY
+        python3 cargar.py
+        ls -la etl.db
+    - publish: etl.db
+      artifact: etl_db
+    - publish: resumen.csv
+      artifact: resumen
+
+# ─── Etapa 4: VISUALIZACION (PNG + dashboard HTML desde la SQLite) ────────────
+- stage: visualizar
+  dependsOn: cargar
+  jobs:
+  - job: dashboard
+    timeoutInSeconds: 300
+    steps:
+    - download: etl_db
+      path: .
+    - download: resumen
+      path: .
+    - script: |
+        set -e
+        echo "=== [VISUALIZACION] Instalando matplotlib y generando dashboard ==="
+        python3 -m venv .venv
+        .venv/bin/pip install --quiet --disable-pip-version-check matplotlib
+        cat > graficar.py << 'PY'
+        import base64, sqlite3
+
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        db = sqlite3.connect("etl.db")
+
+        # Grafica 1: promedios por ciudad (barras)
+        rows = list(db.execute("SELECT ciudad, avg_t_max, avg_t_min, avg_t_media FROM agregados"))
+        cities = [r[0] for r in rows]
+        x = range(len(cities))
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        ax.bar([i - 0.2 for i in x], [r[1] for r in rows], 0.4, label="t_max prom")
+        ax.bar([i + 0.2 for i in x], [r[2] for r in rows], 0.4, label="t_min prom")
+        ax.set_xticks(list(x)); ax.set_xticklabels(cities)
+        ax.set_ylabel("Temperatura (C)"); ax.set_title("Promedios por ciudad (ultimos 7 dias)")
+        ax.legend(); fig.tight_layout(); fig.savefig("grafica_ciudades.png", dpi=100)
+
+        # Grafica 2: evolucion diaria de t_media (lineas)
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        for ciudad in cities:
+            pts = list(db.execute("SELECT fecha, t_media FROM observaciones WHERE ciudad=? ORDER BY rowid", (ciudad,)))
+            ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", label=ciudad)
+        ax.set_ylabel("t_media (C)"); ax.set_title("Temperatura media diaria")
+        ax.tick_params(axis="x", rotation=45); ax.legend(); fig.tight_layout()
+        fig.savefig("grafica_dias.png", dpi=100)
+
+        # Dashboard HTML autocontenido: PNG embebidos en base64 + tabla de agregados
+        png1 = base64.b64encode(open("grafica_ciudades.png", "rb").read()).decode()
+        png2 = base64.b64encode(open("grafica_dias.png", "rb").read()).decode()
+        tabla = "".join(f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td>"
+                        f"<td>{r[4]}</td><td>{r[5]}</td><td>{r[6]}</td></tr>"
+                        for r in db.execute("SELECT * FROM agregados"))
+        html = f"""<!DOCTYPE html>
+        <html lang="es"><head><meta charset="utf-8">
+        <title>Dashboard ETL Meteorologico</title>
+        <style>
+          body {{ font-family: sans-serif; margin: 2rem; background: #f7f7f9; }}
+          h1 {{ color: #22313f; }} img {{ max-width: 90%; border: 1px solid #ccc; margin: 1rem 0; }}
+          table {{ border-collapse: collapse; background: white; }}
+          td, th {{ border: 1px solid #999; padding: 6px 14px; text-align: center; }}
+        </style></head><body>
+        <h1>Dashboard ETL Meteorologico</h1>
+        <p>Datos: Open-Meteo (API publica). Generado por el pipeline etl_meteorologico.</p>
+        <img src="data:image/png;base64,{png1}">
+        <img src="data:image/png;base64,{png2}">
+        <h2>Agregados (desde SQLite)</h2>
+        <table><tr><th>ciudad</th><th>dias</th><th>avg_t_max</th><th>avg_t_min</th>
+        <th>avg_t_media</th><th>total_precip_mm</th><th>max_viento_kmh</th></tr>{tabla}</table>
+        </body></html>"""
+        open("dashboard.html", "w").write(html)
+        print("Dashboard generado: dashboard.html + 2 PNG")
+
+        # Grafica ASCII para el log del pipeline (visible con pipectl LOGS)
+        print("\nGrafica ASCII (avg t_media por ciudad):")
+        for r in rows:
+            barra = "#" * max(1, int(r[3]))
+            print(f"  {r[0]:10s} | {barra} {r[3]} C")
+        PY
+        MPLBACKEND=Agg .venv/bin/python graficar.py
+        ls -la dashboard.html grafica_ciudades.png grafica_dias.png
+    - publish: dashboard.html
+      artifact: dashboard
+    - publish: grafica_ciudades.png
+      artifact: grafica_ciudades
+    - publish: grafica_dias.png
+      artifact: grafica_dias
