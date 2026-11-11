@@ -1,0 +1,395 @@
+# Auto-CI: the pipeline server compiling, testing and benchmarking ITSELF.
+#
+# The pipeline clones the repo itself (REPO_SRC), builds it from scratch, runs
+# the 9 unit suites + integration + the race test, and executes the whole
+# benchmark battery (bench/run.sh): wide, deep, data_wc, data_hist and
+# combined. Every bench job starts its OWN nested pipelined servers on
+# ephemeral ports (20000-39999), so the nesting is safe: they are separate
+# processes.
+#
+#   checkout      -> git clone of REPO_SRC (clean: build/ and bin/ are in
+#                    .gitignore, so the build below really is from scratch)
+#                    + meta.txt (host, cores, gcc, commit)
+#   build         -> make -j$(nproc) + verification of the 12 binaries
+#   test          -> THREE JOBS IN PARALLEL:
+#                    unit         : the 9 suites one by one, with a verdict
+#                    integration  : tests/test_integration.sh (ephemeral server)
+#                    race         : make test-race (phase 2 WITHOUT protection
+#                                   aborts on purpose: that is the evidence;
+#                                   the job only fails if phase 1 WITH
+#                                   protection loses lines)
+#   bench_fast    -> TWO JOBS IN PARALLEL (fast scenarios):
+#                    bench_wide : 16 independent Cpu@1 jobs
+#                    bench_deep : chain of 16 jobs with dependsOn
+#   bench_data    -> corpus + WordCount@1/Histogram@1 (OpenMP thread sweep).
+#                    Sequential after bench_fast: the heavy scenarios run one
+#                    at a time so the official measurements stay clean (data
+#                    with 8 threads and combined with 8 agents would fight
+#                    over the same cores).
+#   bench_combined-> 3 wide pipelines competing for agents (sequential).
+#   report        -> fan-in: bench/analyze.py (speedup S(p), efficiency E(p),
+#                    Amdahl fit) + bench/plot.py (speedup, efficiency and
+#                    time SVGs per scenario) + test evidence in a final
+#                    SUMMARY.md.
+#
+# Everything travels between stages as an artifact because jobs do not share
+# a filesystem (same pattern as ci_cd.yaml).
+#
+# Usage:
+#   ./bin/pipelined 9000 4 /tmp/pipelines &
+#   ./bin/pipectl 127.0.0.1 9000 SUBMIT examples/self_ci.yaml
+#   ./bin/pipectl 127.0.0.1 9000 LOGS <id> FOLLOW
+#
+# Note: the real CPU work is done by the nested pipelined servers; keep the
+# machine idle while the battery runs for clean measurements.
+#
+# The variables below reproduce the full bench/run.sh battery (5 reps, agents
+# and threads 1/2/4/8, 512M corpus; ~10 min on 8 cores). For a quick smoke
+# run use: REPS=3, AGENTS/THREADS="1 2 4", SIZE=64M (~3 min).
+name: self_ci
+
+variables:
+  # Absolute path of the repo to clone (this repo itself, by default).
+  REPO_SRC: "/home/deck/pipelines/Servidor-de-pipelines-concurrente"
+  # Full battery: same defaults as bench/run.sh.
+  BENCH_REPS: "5"
+  BENCH_AGENTS: "1 2 4 8"
+  BENCH_THREADS: "1 2 4 8"
+  BENCH_SIZE: "512M"
+
+stages:
+
+# --- Stage 1: clean copy of the repo --------------------------------------------
+- stage: checkout
+  jobs:
+  - job: clone
+    timeoutInSeconds: 120
+    steps:
+    - script: |
+        set -e
+        echo "=== [CHECKOUT] Cloning the repo from $(REPO_SRC) ==="
+        if [ ! -d "$(REPO_SRC)/.git" ]; then
+            echo "ERROR: REPO_SRC is not a git repository: $(REPO_SRC)"
+            exit 1
+        fi
+        git clone --quiet "$(REPO_SRC)" repo
+        cd repo
+        echo ""
+        echo "Cloned commit:"
+        git log --oneline -1
+        echo "Files in the copy (no build/ or bin/, thanks to .gitignore):"
+        ls
+        cd ..
+        {
+            echo "host    : $(uname -n)"
+            echo "kernel  : $(uname -srm)"
+            echo "distro  : $(. /etc/os-release 2>/dev/null; echo "$PRETTY_NAME")"
+            echo "cores   : $(nproc)"
+            echo "gcc     : $(gcc -dumpversion 2>/dev/null)"
+            echo "commit  : $(git -C repo rev-parse HEAD)"
+        } > meta.txt
+        echo ""
+        cat meta.txt
+    - publish: repo
+      artifact: repo_src
+    - publish: meta.txt
+      artifact: meta_info
+
+# --- Stage 2: build from scratch --------------------------------------------------
+- stage: build
+  dependsOn: checkout
+  jobs:
+  - job: compile
+    timeoutInSeconds: 1200
+    steps:
+    - download: repo_src
+      path: .
+    - script: |
+        set -e
+        cd repo
+        echo "=== [BUILD] make -j$(nproc) from scratch ==="
+        make -j"$(nproc)" > ../build.log 2>&1
+        tail -n 3 ../build.log
+        echo ""
+        echo "Checking the 12 binaries..."
+        for b in pipelined pipectl gen_corpus test_core test_scheduler \
+                 test_registry test_commands test_parser test_protocol \
+                 test_determinism test_variables test_tasks_determinism; do
+            test -x "bin/$b" || { echo "MISSING bin/$b"; exit 1; }
+            echo "  OK bin/$b"
+        done
+        echo "Full build from scratch: OK."
+    - publish: build.log
+      artifact: build_log
+    - publish: repo
+      artifact: repo_built
+
+# --- Stage 3: tests (3 jobs in parallel) ------------------------------------------
+- stage: test
+  dependsOn: build
+  jobs:
+
+  - job: unit
+    timeoutInSeconds: 1200
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        echo "=== [TEST] 9 unit suites ==="
+        PASS=0
+        FAIL=0
+        : > ../unit_results.txt
+        for t in test_core test_scheduler test_registry test_commands \
+                 test_parser test_protocol test_determinism test_variables \
+                 test_tasks_determinism; do
+            echo "--- $t" >> ../unit_results.txt
+            if ./bin/$t > /tmp/unit_out.txt 2>&1; then
+                cat /tmp/unit_out.txt >> ../unit_results.txt
+                echo "PASS $t" >> ../unit_results.txt
+                PASS=$((PASS+1))
+            else
+                cat /tmp/unit_out.txt >> ../unit_results.txt
+                echo "FAIL $t" >> ../unit_results.txt
+                FAIL=$((FAIL+1))
+            fi
+        done
+        echo "" >> ../unit_results.txt
+        echo "Unit result: $PASS passed, $FAIL failed" >> ../unit_results.txt
+        tail -n 12 ../unit_results.txt
+        [ "$FAIL" -eq 0 ] || { echo "UNIT SUITE FAILED"; exit 1; }
+    - publish: unit_results.txt
+      artifact: unit_results
+
+  - job: integration
+    timeoutInSeconds: 1200
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        echo "=== [TEST] client-server integration ==="
+        RC=0
+        bash tests/test_integration.sh > ../integration_out.txt 2>&1 || RC=$?
+        tail -n 30 ../integration_out.txt
+        echo "exit: $RC"
+        if [ "$RC" -ne 0 ]; then
+            echo "INTEGRATION TEST FAILED"
+            exit 1
+        fi
+    - publish: integration_out.txt
+      artifact: integration_log
+
+  - job: race
+    timeoutInSeconds: 1800
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        echo "=== [TEST] race (make test-race) ==="
+        echo "Note: phase 2 WITHOUT protection aborts on purpose (that is the"
+        echo "race evidence); the job only fails if phase 1 WITH protection"
+        echo "loses lines."
+        echo ""
+        RC=0
+        make test-race > ../race_out.txt 2>&1 || RC=$?
+        tail -n 25 ../race_out.txt
+        if [ "$RC" -ne 0 ]; then
+            echo "make test-race exited with $RC: the protected phase failed."
+            exit 1
+        fi
+        echo ""
+        echo "Phase 1 (with protection) intact and the expected abort in phase 2: OK."
+    - publish: race_out.txt
+      artifact: race_log
+
+# --- Stage 4a: fast scenarios (in parallel) ----------------------------------------
+- stage: bench_fast
+  dependsOn: test
+  jobs:
+
+  - job: bench_wide
+    timeoutInSeconds: 1800
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        export BENCH_REPS=$(BENCH_REPS)
+        export BENCH_AGENTS="$(BENCH_AGENTS)"
+        export BENCH_SIZE=$(BENCH_SIZE)
+        echo "=== [BENCH] wide: 16 independent Cpu@1 jobs (agents: $(BENCH_AGENTS), reps: $(BENCH_REPS)) ==="
+        bash bench/run.sh wide
+        cp "$(ls -t bench/results/*.csv | head -1)" ../csv_wide.csv
+        echo "CSV saved."
+    - publish: csv_wide.csv
+      artifact: csv_wide
+
+  - job: bench_deep
+    timeoutInSeconds: 1800
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        export BENCH_REPS=$(BENCH_REPS)
+        export BENCH_AGENTS="$(BENCH_AGENTS)"
+        export BENCH_SIZE=$(BENCH_SIZE)
+        echo "=== [BENCH] deep: chain of 16 jobs with dependsOn (agents: $(BENCH_AGENTS), reps: $(BENCH_REPS)) ==="
+        bash bench/run.sh deep
+        cp "$(ls -t bench/results/*.csv | head -1)" ../csv_deep.csv
+        echo "CSV saved."
+    - publish: csv_deep.csv
+      artifact: csv_deep
+
+# --- Stage 4b: WordCount/Histogram with a thread sweep (sequential) ----------------
+- stage: bench_data
+  dependsOn: bench_fast
+  jobs:
+
+  - job: bench_data
+    timeoutInSeconds: 1800
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        export BENCH_REPS=$(BENCH_REPS)
+        export BENCH_THREADS="$(BENCH_THREADS)"
+        export BENCH_SIZE=$(BENCH_SIZE)
+        echo "=== [BENCH] data: WordCount@1 + Histogram@1 (threads: $(BENCH_THREADS), corpus: $(BENCH_SIZE)) ==="
+        bash bench/run.sh data
+        cp "$(ls -t bench/results/*.csv | head -1)" ../csv_data.csv
+        echo "CSV saved."
+    - publish: csv_data.csv
+      artifact: csv_data
+
+# --- Stage 4c: pipelines competing (sequential, clean measurements) ----------------
+- stage: bench_combined
+  dependsOn: bench_data
+  jobs:
+
+  - job: bench_combined
+    timeoutInSeconds: 2400
+    steps:
+    - download: repo_built
+      path: .
+    - script: |
+        set -e
+        cd repo
+        export BENCH_REPS=$(BENCH_REPS)
+        export BENCH_AGENTS="$(BENCH_AGENTS)"
+        export BENCH_SIZE=$(BENCH_SIZE)
+        echo "=== [BENCH] combined: 3 wide pipelines competing for agents (agents: $(BENCH_AGENTS), reps: $(BENCH_REPS)) ==="
+        bash bench/run.sh combined
+        cp "$(ls -t bench/results/*.csv | head -1)" ../csv_combined.csv
+        echo "CSV saved."
+    - publish: csv_combined.csv
+      artifact: csv_combined
+
+# --- Stage 5: final fan-in ----------------------------------------------------------
+- stage: report
+  dependsOn: bench_combined
+  jobs:
+  - job: summary
+    timeoutInSeconds: 600
+    steps:
+    - download: repo_src
+      path: .
+    - download: meta_info
+      path: .
+    - download: unit_results
+      path: .
+    - download: integration_log
+      path: .
+    - download: race_log
+      path: .
+    - download: csv_wide
+      path: .
+    - download: csv_deep
+      path: .
+    - download: csv_data
+      path: .
+    - download: csv_combined
+      path: .
+    - script: |
+        set -e
+        echo "=== [REPORT] Merging the 4 CSVs into one ==="
+        # One CSV with the 5 scenarios: analyze.py and plot.py then see a
+        # single "Local" environment and the charts come out with one series.
+        cp csv_wide.csv csv_full.csv
+        for f in csv_deep.csv csv_data.csv csv_combined.csv; do
+            grep -v -e '^#' -e '^scenario,param' -e '^$' "$f" >> csv_full.csv
+        done
+        echo "csv_full.csv: $(grep -cv '^#' csv_full.csv) data rows"
+        echo ""
+        echo "=== [REPORT] Analysis (medians, speedup, efficiency, Amdahl) ==="
+        python3 repo/bench/analyze.py csv_full.csv > analysis.txt 2>&1
+        cat analysis.txt
+        echo ""
+        echo "=== [REPORT] SVG charts (bench/plot.py) ==="
+        rm -rf repo/bench/results/*.csv repo/bench/results/plots
+        mkdir -p repo/bench/results
+        cp csv_full.csv repo/bench/results/self_ci_$(date +%Y%m%d_%H%M%S).csv
+        python3 repo/bench/plot.py
+        ls repo/bench/results/plots/
+        echo ""
+        {
+            echo "# Auto-CI: pipeline summary"
+            echo ""
+            echo "Generated by the self_ci pipeline on its own repository."
+            echo ""
+            echo "## Environment"
+            echo '```'
+            cat meta.txt
+            echo '```'
+            echo ""
+            echo "## Tests"
+            echo ""
+            echo "### Unit suites (9)"
+            echo '```'
+            cat unit_results.txt
+            echo '```'
+            echo ""
+            echo "### Client-server integration (last lines)"
+            echo '```'
+            tail -n 15 integration_out.txt
+            echo '```'
+            echo ""
+            echo "### Race test (last lines)"
+            echo '```'
+            tail -n 15 race_out.txt
+            echo '```'
+            echo ""
+            echo "## Benchmarks (medians, speedup, efficiency, Amdahl)"
+            echo '```'
+            cat analysis.txt
+            echo '```'
+            echo ""
+            echo "## Charts"
+            echo ""
+            echo "Vector SVGs in \`plots/\` (generated with bench/plot.py):"
+            echo ""
+            echo "| Scenario | Speedup | Efficiency | Time |"
+            echo "|---|---|---|---|"
+            echo "| wide    | ![S](plots/wide_speedup.svg)    | ![E](plots/wide_efficiency.svg)    | ![T](plots/wide_time.svg)    |"
+            echo "| deep    | ![S](plots/deep_speedup.svg)    | ![E](plots/deep_efficiency.svg)    | ![T](plots/deep_time.svg)    |"
+            echo "| data_wc | ![S](plots/data_wc_speedup.svg) | ![E](plots/data_wc_efficiency.svg) | ![T](plots/data_wc_time.svg) |"
+            echo "| data_hist | ![S](plots/data_hist_speedup.svg) | ![E](plots/data_hist_efficiency.svg) | ![T](plots/data_hist_time.svg) |"
+            echo "| combined | ![S](plots/combined_speedup.svg) | ![E](plots/combined_efficiency.svg) | ![T](plots/combined_time.svg) |"
+        } > SUMMARY.md
+        echo "Summary generated:"
+        wc -l SUMMARY.md
+    - publish: SUMMARY.md
+      artifact: final_report
+    - publish: csv_full.csv
+      artifact: csv_full
+    - publish: repo/bench/results/plots
+      artifact: charts

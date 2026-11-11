@@ -15,6 +15,7 @@ el nombre del artefacto.
 | `etl.yaml` (camino verde) | succeeded | 13.83s | 13 (raw, limpia, gate, SQLite, dashboard, PNG) |
 | `etl.yaml` (camino rojo, `FORZAR_FALLO=1`) | **failed (a propósito)** | 4.65s | gate rechaza → cuarentena corre → load skip |
 | `invalid.yaml` | **rechazado en SUBMIT** | — | — |
+| `self_ci.yaml` | succeeded | 341.60s | 3 (SUMMARY.md, consolidated CSV, 15 SVG charts) |
 
 El camino rojo de `etl.yaml` demuestra las condiciones del motor: el quality gate
 rechaza datos corruptos (`condition` del gate falla), `cuarentena` corre gracias a
@@ -53,18 +54,36 @@ rechaza datos corruptos (`condition` del gate falla), `cuarentena` corre gracias
 - `dashboard/dashboard.html` + `grafica_*/` — dashboard HTML autocontenido
   (PNG embebidos en base64) y las 2 gráficas matplotlib.
 
+### self_ci (self_ci.yaml) — the engine compiling, testing and benchmarking itself
+Full-battery run (5 reps, agents and threads 1/2/4/8, 512M corpus) against a
+clean clone of the repo itself (no `build/` or `bin/`, thanks to `.gitignore`):
+build from scratch, 9 unit suites + integration + race test (3 jobs in
+parallel), and the 4 `bench/run.sh` scenarios with nested `pipelined` servers
+on ephemeral ports inside the jobs.
+- `SUMMARY.md` — fan-in report: environment, verdict of the 3 test tracks and
+  the benchmark analysis with the `bench/analyze.py` tables.
+- `csv_full.csv` — the 5 scenarios consolidated (wide, deep, data_wc,
+  data_hist, combined; 45 measurements).
+- `charts/*.svg` — 15 vector charts from `bench/plot.py` (speedup, efficiency
+  and time per scenario).
+
+Key results (AMD Ryzen Z2 Go, 8 cores): wide S(8)=7.10 with f=0.983;
+deep flat at ~0.96 (the serial DAG is the serial fraction of Amdahl);
+data_wc S(8)=1.97; combined S(8)=5.53.
+
 ## Qué features del motor cubre cada ejemplo
 
 | Feature | Demonstrada en |
 |---|---|
-| Stages con `dependsOn` y jobs en paralelo | ci_cd (5 stages), gutenberg, fan_out_fan_in |
-| `publish` / `download` entre stages | ci_cd, gutenberg, fan_out_fan_in |
+| Stages con `dependsOn` y jobs en paralelo | ci_cd (5 stages), gutenberg, fan_out_fan_in, self_ci |
+| `publish` / `download` entre stages | ci_cd, gutenberg, fan_out_fan_in, self_ci |
 | Tasks nativos `WordCount@1` / `Histogram@1` | gutenberg, fan_out_fan_in |
-| Variables del pipeline + `$(VAR)` | gutenberg |
+| Variables del pipeline + `$(VAR)` | gutenberg, self_ci (sweep configurable de la batería) |
 | `timeoutInSeconds` (job de red) | gutenberg (job `fetch`) |
 | `condition: failed()` / `always()` | etl.yaml (cuarentena y limpieza_final) |
 | Validación estricta de YAML | invalid.yaml (rechazado con todos los errores) |
-| Compilación real, tests con exit 1, release | ci_cd |
+| Compilación real, tests con exit 1, release | ci_cd, self_ci (build + 11 suites de test) |
+| Servidores anidados (el pipeline ejecuta `pipelined` dentro de sus jobs) | self_ci |
 
 ## Cómo regenerar
 
@@ -73,6 +92,8 @@ rechaza datos corruptos (`condition` del gate falla), `cuarentena` corre gracias
 for f in ci_cd gutenberg fan_out_fan_in etl; do
   ./bin/pipectl 127.0.0.1 9377 SUBMIT examples/$f.yaml
 done
+# self_ci runs the full battery (~6 min); optional:
+# ./bin/pipectl 127.0.0.1 9377 SUBMIT examples/self_ci.yaml
 # artefactos en /tmp/pipelines/artifacts/<run_id>/<artifact>/
 ./bin/pipectl 127.0.0.1 9377 SHUTDOWN
 ```
