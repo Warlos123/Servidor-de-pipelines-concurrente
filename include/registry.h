@@ -11,12 +11,18 @@ typedef struct {
     run_t **runs;
     size_t count;
     size_t capacity;
+    uint64_t base_id;   // runs start at base_id + 1; continues ids on disk after a restart
     omp_lock_t lock;
 } registry_t;
 
 int registry_init(registry_t *registry);
 
 void registry_destroy(registry_t *registry);
+
+// Sets the starting point of run ids. Called once after init with the highest
+// run id already present in the workdir, so a restarted server doesn't reuse
+// ids that name artifacts/<id> and runs/<id> directories from previous runs.
+void registry_set_base_id(registry_t *registry, uint64_t base_id);
 
 int registry_submit(registry_t *registry, scheduler_t *scheduler, pipeline_t *pipeline, uint64_t *run_id);
 

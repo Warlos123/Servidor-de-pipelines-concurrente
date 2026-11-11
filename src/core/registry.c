@@ -143,6 +143,7 @@ int registry_init(registry_t *registry){
     }
     registry->count = 0;
     registry->capacity = INITIAL_CAPACITY;
+    registry->base_id = 0;
     omp_init_lock(&registry->lock);
     return 0;
 }
@@ -161,11 +162,17 @@ void registry_destroy(registry_t *registry){
 static run_t *find_run(registry_t *registry, uint64_t run_id){
     run_t *run = NULL;
     omp_set_lock(&registry->lock);
-    if (run_id >= 1 && run_id <= (uint64_t)registry->count) {
-        run = registry->runs[run_id - 1];
+    if (run_id > registry->base_id && run_id <= registry->base_id + (uint64_t)registry->count) {
+        run = registry->runs[run_id - registry->base_id - 1];
     }
     omp_unset_lock(&registry->lock);
     return run;
+}
+
+void registry_set_base_id(registry_t *registry, uint64_t base_id){
+    omp_set_lock(&registry->lock);
+    registry->base_id = base_id;
+    omp_unset_lock(&registry->lock);
 }
 
 int registry_submit(registry_t *registry, scheduler_t *scheduler, pipeline_t *pipeline, uint64_t *run_id){
@@ -182,7 +189,7 @@ int registry_submit(registry_t *registry, scheduler_t *scheduler, pipeline_t *pi
         registry->capacity = capacity;
     }
 
-    uint64_t id = (uint64_t)registry->count + 1;
+    uint64_t id = registry->base_id + (uint64_t)registry->count + 1;
     run_t *run = run_create(id, pipeline);
     if (run == NULL) {
         omp_unset_lock(&registry->lock);
