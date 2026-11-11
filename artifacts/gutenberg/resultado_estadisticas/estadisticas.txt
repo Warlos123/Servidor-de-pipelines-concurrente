@@ -1,0 +1,9 @@
+=== ESTADISTICAS: Orgullo y Prejuicio ===
+Lineas totales   : 14537
+Lineas con texto : 11574
+Lineas en blanco : 2963
+Total palabras   : 127378
+Total caracteres : 738046
+Oraciones aprox. : 7357
+Capitulos        : 61
+Palabra mas larga: character-creation--masterpieces ( 32 caracteres)
