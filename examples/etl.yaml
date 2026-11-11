@@ -1,32 +1,32 @@
-# ETL meteorologico sobre la API publica de Open-Meteo (sin API key).
-# Corre on-demand con SUBMIT (sin cron).
+# Weather ETL over the public Open-Meteo API (no API key).
+# Runs on-demand with SUBMIT (no cron).
 #
-# Flujo:
-#   extraer    -> TRES JOBS EN PARALELO (San Jose, Madrid, Tokio):
-#                 venv + pip install requests -> GET a la API -> JSON crudo
-#   transformar-> TRES JOBS EN PARALELO (limpieza por ciudad):
-#                 dedup, conversion de fechas ISO->DD/MM/YYYY, descarte de nulos,
-#                 calculo de temperatura media, reporte de calidad por ciudad.
-#                 luego:
-#                   control_calidad : valida las 3 salidas (falla si no cumplen SLA)
-#                   cuarentena      : condition: failed(), corre si la validacion falla
-#                   limpieza_final  : condition: always(), bitacora que siempre corre
-#   cargar     -> SQLite (stdlib sqlite3): tablas observaciones + agregados
-#                 (AVG/SUM/MAX en SQL), export a resumen.csv
-#   visualizar -> venv + pip install matplotlib: lee la SQLite, genera 2 graficas PNG
-#                 y un dashboard.html autocontenido (PNG embebidos en base64)
+# Flow:
+#   extraer    -> THREE JOBS IN PARALLEL (San Jose, Madrid, Tokyo):
+#                 venv + pip install requests -> GET the API -> raw JSON
+#   transformar-> THREE JOBS IN PARALLEL (cleanup per city):
+#                 dedup, date conversion ISO->DD/MM/YYYY, null dropping,
+#                 mean temperature, per-city quality report.
+#                 then:
+#                   control_calidad : validates the 3 outputs (fails if they miss the SLA)
+#                   cuarentena      : condition: failed(), runs if validation fails
+#                   limpieza_final  : condition: always(), log that always runs
+#   cargar     -> SQLite (stdlib sqlite3): observaciones + aggregates tables
+#                 (AVG/SUM/MAX in SQL), export to resumen.csv
+#   visualizar -> venv + pip install matplotlib: reads the SQLite, generates 2 PNG charts
+#                 and a self-contained dashboard.html (PNGs embedded in base64)
 #
-# Con FORZAR_FALLO=1 la validacion corrompe los CSV y el gate rechaza:
-# sirve para verificar cuarentena y el aborto del pipeline.
+# With FORZAR_FALLO=1 the validation corrupts the CSVs and the gate rejects:
+# it is there to verify the quarantine path and the pipeline abort.
 #
-# Uso: pipectl <host> <port> SUBMIT examples/etl.yaml
+# Usage: pipectl <host> <port> SUBMIT examples/etl.yaml
 name: etl_meteorologico
 variables:
   API_HOST: "api.open-meteo.com"
   FORZAR_FALLO: "0"
 
 stages:
-# ─── Etapa 1: EXTRACT (3 jobs en paralelo, uno por ciudad) ───────────────────
+# ─── Stage 1: EXTRACT (3 jobs in parallel, one per city) ─────────────────────
 - stage: extraer
   jobs:
 
@@ -42,7 +42,7 @@ stages:
         import json, requests
         from datetime import datetime, timezone
 
-        # $(API_HOST) lo sustituye el motor con la variable del pipeline
+        # $(API_HOST) is substituted by the engine with the pipeline variable
         URL = "https://$(API_HOST)/v1/forecast?latitude=9.9281&longitude=-84.0907&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7"
 
         r = requests.get(URL, timeout=30)
@@ -61,8 +61,8 @@ stages:
         }
         with open("raw_sanjose.json", "w") as f:
             json.dump(payload, f, indent=2)
-        print(f"Extraidos {len(payload['dias'])} dias. Rango: {payload['dias'][0]} .. {payload['dias'][-1]}")
-        print(f"San Jose hoy: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
+        print(f"Extracted {len(payload['dias'])} days. Range: {payload['dias'][0]} .. {payload['dias'][-1]}")
+        print(f"San Jose today: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
         PY
         .venv/bin/python extraer.py
     - publish: raw_sanjose.json
@@ -73,7 +73,7 @@ stages:
     steps:
     - script: |
         set -e
-        echo "=== [EXTRACT] Madrid, Espana ==="
+        echo "=== [EXTRACT] Madrid, Spain ==="
         python3 -m venv .venv
         .venv/bin/pip install --quiet --disable-pip-version-check requests
         cat > extraer.py << 'PY'
@@ -98,8 +98,8 @@ stages:
         }
         with open("raw_madrid.json", "w") as f:
             json.dump(payload, f, indent=2)
-        print(f"Extraidos {len(payload['dias'])} dias. Rango: {payload['dias'][0]} .. {payload['dias'][-1]}")
-        print(f"Madrid hoy: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
+        print(f"Extracted {len(payload['dias'])} days. Range: {payload['dias'][0]} .. {payload['dias'][-1]}")
+        print(f"Madrid today: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
         PY
         .venv/bin/python extraer.py
     - publish: raw_madrid.json
@@ -110,7 +110,7 @@ stages:
     steps:
     - script: |
         set -e
-        echo "=== [EXTRACT] Tokio, Japon ==="
+        echo "=== [EXTRACT] Tokyo, Japan ==="
         python3 -m venv .venv
         .venv/bin/pip install --quiet --disable-pip-version-check requests
         cat > extraer.py << 'PY'
@@ -135,26 +135,26 @@ stages:
         }
         with open("raw_tokyo.json", "w") as f:
             json.dump(payload, f, indent=2)
-        print(f"Extraidos {len(payload['dias'])} dias. Rango: {payload['dias'][0]} .. {payload['dias'][-1]}")
-        print(f"Tokio hoy: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
+        print(f"Extracted {len(payload['dias'])} days. Range: {payload['dias'][0]} .. {payload['dias'][-1]}")
+        print(f"Tokyo today: max {payload['t_max'][0]} C, min {payload['t_min'][0]} C, precip {payload['precip'][0]} mm")
         PY
         .venv/bin/python extraer.py
     - publish: raw_tokyo.json
       artifact: raw_tokyo
 
-# ─── Etapa 2: TRANSFORM (limpieza por ciudad en paralelo + control de calidad) ─
+# ─── Stage 2: TRANSFORM (per-city cleanup in parallel + quality control) ──────
 - stage: transformar
   dependsOn: extraer
   jobs:
 
-  # ---- limpieza: 3 jobs con la misma logica, uno por ciudad (stdlib puro) -----
+  # ---- cleanup: 3 jobs with the same logic, one per city (pure stdlib) --------
   - job: limpiar_sanjose
     steps:
     - download: raw_sanjose
       path: .
     - script: |
         set -e
-        echo "=== [TRANSFORM] San Jose: dedup, fechas, nulos, promedios ==="
+        echo "=== [TRANSFORM] San Jose: dedup, dates, nulls, averages ==="
         cat > limpiar.py << 'PY'
         import json, csv, datetime, sys
 
@@ -167,9 +167,9 @@ stages:
             if None in (tmax, tmin, pr, viento):
                 nulos += 1
                 continue
-            # conversion de fecha: ISO 8601 -> DD/MM/YYYY
+            # date conversion: ISO 8601 -> DD/MM/YYYY
             fecha = datetime.date.fromisoformat(fecha_iso).strftime("%d/%m/%Y")
-            if fecha in vistas:            # dedup por fecha (proteccion ante reintentos)
+            if fecha in vistas:            # dedup by date (protection against retries)
                 dups += 1
                 continue
             vistas.add(fecha)
@@ -195,7 +195,7 @@ stages:
       path: .
     - script: |
         set -e
-        echo "=== [TRANSFORM] Madrid: dedup, fechas, nulos, promedios ==="
+        echo "=== [TRANSFORM] Madrid: dedup, dates, nulls, averages ==="
         cat > limpiar.py << 'PY'
         import json, csv, datetime, sys
 
@@ -235,7 +235,7 @@ stages:
       path: .
     - script: |
         set -e
-        echo "=== [TRANSFORM] Tokio: dedup, fechas, nulos, promedios ==="
+        echo "=== [TRANSFORM] Tokyo: dedup, dates, nulls, averages ==="
         cat > limpiar.py << 'PY'
         import json, csv, datetime, sys
 
@@ -269,8 +269,8 @@ stages:
     - publish: limpia_tokyo.csv
       artifact: limpia_tokyo
 
-  # ---- control de calidad: valida las 3 salidas contra el SLA -----------------
-  # Con FORZAR_FALLO=1 corrompe los CSV antes de validar.
+  # ---- quality control: validates the 3 outputs against the SLA ---------------
+  # With FORZAR_FALLO=1 it corrupts the CSVs before validating.
   - job: control_calidad
     dependsOn: [limpiar_sanjose, limpiar_madrid, limpiar_tokyo]
     steps:
@@ -283,22 +283,22 @@ stages:
     - script: |
         set -e
         export FORZAR_FALLO="$(FORZAR_FALLO)"
-        echo "=== [QUALITY GATE] Validando SLA de datos (FORZAR_FALLO=$(FORZAR_FALLO)) ==="
+        echo "=== [QUALITY GATE] Validating data SLA (FORZAR_FALLO=$(FORZAR_FALLO)) ==="
         cat > gate.py << 'PY'
         import csv, json, os, sys
         from datetime import datetime, timezone
 
         CIUDADES = ["sanjose", "madrid", "tokyo"]
-        SLA_FILAS_MIN = 6          # pronostico de 7 dias, toleramos 1 dia nulo por ciudad
+        SLA_FILAS_MIN = 6          # 7-day forecast, we tolerate 1 null day per city
 
-        # inyeccion de datos corruptos con FORZAR_FALLO=1
+        # corrupt data injection with FORZAR_FALLO=1
         if os.environ.get("FORZAR_FALLO") == "1":
-            print(">>> CHAOS: inyectando duplicados y campos vacios en los CSV...")
+            print(">>> CHAOS: injecting duplicates and empty fields into the CSVs...")
             for c in CIUDADES:
                 path = f"limpia_{c}.csv"
                 lineas = open(path).read().rstrip("\n").split("\n")
-                lineas.append(lineas[1])                    # duplicado exacto
-                lineas.append(f"31/02/2026,{c},,,,,")       # fecha imposible + nulos
+                lineas.append(lineas[1])                    # exact duplicate
+                lineas.append(f"31/02/2026,{c},,,,,")       # impossible date + nulls
                 open(path, "w").write("\n".join(lineas) + "\n")
 
         problemas = []
@@ -308,21 +308,21 @@ stages:
             header, data = rows[0], rows[1:]
             ciudades = set(r[1] for r in data)
             if len(data) < SLA_FILAS_MIN:
-                problemas.append(f"{path}: {len(data)} filas < SLA {SLA_FILAS_MIN}")
+                problemas.append(f"{path}: {len(data)} rows < SLA {SLA_FILAS_MIN}")
             if len(set((r[0], r[1]) for r in data)) != len(data):
-                problemas.append(f"{path}: duplicados (ciudad, fecha)")
+                problemas.append(f"{path}: duplicates (city, date)")
             for r in data:
                 if any(x == "" for x in r):
-                    problemas.append(f"{path}: campo vacio en {r}")
-                    continue        # no intentar parsear lo que falta
+                    problemas.append(f"{path}: empty field in {r}")
+                    continue        # do not try to parse what is missing
                 try:
                     datetime.strptime(r[0], "%d/%m/%Y")
                 except ValueError:
-                    problemas.append(f"{path}: fecha invalida -> {r[0]!r}")
+                    problemas.append(f"{path}: invalid date -> {r[0]!r}")
                 tmax, tmin, tmedia = float(r[2]), float(r[3]), float(r[4])
                 if abs(tmedia - round((tmax + tmin) / 2, 2)) > 0.01:
-                    problemas.append(f"{path}: t_media inconsistente en {r[0]}")
-            print(f"  {path}: {len(data)} filas, ciudades={ciudades}, header ok={header == ['fecha','ciudad','t_max','t_min','t_media','precip_mm','viento_kmh']}")
+                    problemas.append(f"{path}: inconsistent t_media in {r[0]}")
+            print(f"  {path}: {len(data)} rows, cities={ciudades}, header ok={header == ['fecha','ciudad','t_max','t_min','t_media','precip_mm','viento_kmh']}")
 
         reporte = {
             "generado_en": datetime.now(timezone.utc).isoformat(),
@@ -333,63 +333,63 @@ stages:
         json.dump(reporte, open("reporte_calidad.json", "w"), indent=2)
         print(json.dumps(reporte, indent=2))
         if problemas:
-            print(f"GATE RECHAZADO: {len(problemas)} problemas. Abortando pipeline.")
+            print(f"GATE REJECTED: {len(problemas)} problems. Aborting pipeline.")
             sys.exit(1)
-        print("GATE APROBADO: los datos cumplen el SLA. Continua la carga.")
+        print("GATE APPROVED: the data meets the SLA. Load continues.")
         PY
         python3 gate.py
     - publish: reporte_calidad.json
       artifact: reporte_calidad
 
-# ─── Etapa 2b: RESGUARDO (jobs condicionales, en un stage aparte) ─────────────
-# Los stages encadenan implicitamente con todos los jobs del anterior, y un
-# job en skip arrastraria a cargar y visualizar: por eso los condicionales van
-# aqui. El stage usa condition: always() porque la condicion del stage se
-# evalua antes que la del job; con la default (succeeded), un fallo en
-# transformar saltaria este stage y cuarentena nunca correria.
+# ─── Stage 2b: SAFEGUARD (conditional jobs, in a stage of their own) ──────────
+# Stages chain implicitly with every job of the previous one, and a skipped job
+# would drag cargar and visualizar along: that is why the conditionals live
+# here. The stage uses condition: always() because the stage condition is
+# evaluated before the job condition; with the default (succeeded), a failure
+# in transformar would skip this stage and cuarentena would never run.
 - stage: resguardar
   condition: always()
   jobs:
 
-  # ---- condition: failed(): corre si la validacion fallo ----------------------
+  # ---- condition: failed(): runs if the validation failed ---------------------
   - job: cuarentena
     condition: failed()
     steps:
     - script: |
         set -e
-        echo "=== [ROLLBACK] Datos rechazados -> registrando incidente de cuarentena ==="
-        # Los raw_* ya estan en el store de artefactos; aqui solo se registra el incidente.
+        echo "=== [ROLLBACK] Rejected data -> logging quarantine incident ==="
+        # The raw_* files are already in the artifact store; this only logs the incident.
         cat > incidente.json << JSON
         {
           "tipo": "sla_incumplido",
           "momento": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "accion": "run abortado; raw_* preservados en el store para re-procesamiento",
-          "gate": "reporte_calidad.json (rechazado)"
+          "accion": "run aborted; raw_* preserved in the store for reprocessing",
+          "gate": "reporte_calidad.json (rejected)"
         }
         JSON
-        echo "Incidente registrado:"
+        echo "Incident logged:"
         cat incidente.json
     - publish: incidente.json
       artifact: incidente_cuarentena
 
-  # ---- condition: always(): bitacora del run -----------------------------------
+  # ---- condition: always(): run log -------------------------------------------
   - job: limpieza_final
     condition: always()
     steps:
     - script: |
-        echo "=== [CLEANUP] Bitacora del run (condition: always()) ==="
+        echo "=== [CLEANUP] Run log (condition: always()) ==="
         {
-          echo "Ejecucion ETL: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "Este job corre SIEMPRE: el pipeline termine aprobado, rechazado o abortado."
-          echo "En produccion aqui se limpian venvs, temporales y se notifica a monitoreo."
+          echo "ETL run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "This job runs ALWAYS: whether the pipeline ends approved, rejected or aborted."
+          echo "In production this is where venvs and temporaries get cleaned and monitoring gets notified."
         } > bitacora_limpieza.txt
         cat bitacora_limpieza.txt
     - publish: bitacora_limpieza.txt
       artifact: bitacora
 
-# ─── Etapa 3: LOAD (SQLite) ───────────────────────────────────────────────────
-# dependsOn explicito a transformar: no debe depender de resguardar, donde los
-# jobs condicionales pueden quedar en skip.
+# ─── Stage 3: LOAD (SQLite) ───────────────────────────────────────────────────
+# Explicit dependsOn to transformar: it must not depend on resguardar, where
+# the conditional jobs may end up skipped.
 - stage: cargar
   dependsOn: [transformar]
   jobs:
@@ -403,7 +403,7 @@ stages:
       path: .
     - script: |
         set -e
-        echo "=== [LOAD] Construyendo base de datos SQLite ==="
+        echo "=== [LOAD] Building SQLite database ==="
         cat > cargar.py << 'PY'
         import csv, sqlite3
 
@@ -415,7 +415,7 @@ stages:
             with open(f"limpia_{c}.csv") as f:
                 rows = [(r[1], r[0], r[2], r[3], r[4], r[5], r[6]) for r in csv.reader(f)][1:]
             cur.executemany("INSERT INTO observaciones VALUES (?,?,?,?,?,?,?)", rows)
-        # agregados calculados POR SQL: promedios, sumas y maximos por ciudad
+        # aggregates computed IN SQL: averages, sums and maxima per city
         cur.execute("CREATE TABLE agregados AS SELECT ciudad, COUNT(*) AS dias, "
                     "ROUND(AVG(t_max),2) AS avg_t_max, ROUND(AVG(t_min),2) AS avg_t_min, "
                     "ROUND(AVG(t_media),2) AS avg_t_media, ROUND(SUM(precip_mm),2) AS total_precip_mm, "
@@ -425,10 +425,10 @@ stages:
             w = csv.writer(f)
             w.writerow(["ciudad", "dias", "avg_t_max", "avg_t_min", "avg_t_media", "total_precip_mm", "max_viento_kmh"])
             w.writerows(cur.execute("SELECT * FROM agregados"))
-        print("Resumen por ciudad (desde SQL):")
+        print("Per-city summary (from SQL):")
         for r in cur.execute("SELECT * FROM agregados"):
-            print(f"  {r[0]:10s} dias={r[1]} avg_max={r[2]} avg_min={r[3]} avg_media={r[4]} precip_total={r[5]}mm viento_max={r[6]}km/h")
-        print(f"Total filas en observaciones: {cur.execute('SELECT COUNT(*) FROM observaciones').fetchone()[0]}")
+            print(f"  {r[0]:10s} days={r[1]} avg_max={r[2]} avg_min={r[3]} avg_mean={r[4]} total_precip={r[5]}mm max_wind={r[6]}km/h")
+        print(f"Total rows in observaciones: {cur.execute('SELECT COUNT(*) FROM observaciones').fetchone()[0]}")
         db.close()
         PY
         python3 cargar.py
@@ -438,7 +438,7 @@ stages:
     - publish: resumen.csv
       artifact: resumen
 
-# ─── Etapa 4: VISUALIZACION (PNG + dashboard HTML desde la SQLite) ────────────
+# ─── Stage 4: VISUALIZATION (PNG + HTML dashboard from the SQLite) ────────────
 - stage: visualizar
   dependsOn: cargar
   jobs:
@@ -451,7 +451,7 @@ stages:
       path: .
     - script: |
         set -e
-        echo "=== [VISUALIZACION] Instalando matplotlib y generando dashboard ==="
+        echo "=== [VISUALIZATION] Installing matplotlib and generating dashboard ==="
         python3 -m venv .venv
         .venv/bin/pip install --quiet --disable-pip-version-check matplotlib
         cat > graficar.py << 'PY'
@@ -463,54 +463,54 @@ stages:
 
         db = sqlite3.connect("etl.db")
 
-        # Grafica 1: promedios por ciudad (barras)
+        # Chart 1: per-city averages (bars)
         rows = list(db.execute("SELECT ciudad, avg_t_max, avg_t_min, avg_t_media FROM agregados"))
         cities = [r[0] for r in rows]
         x = range(len(cities))
         fig, ax = plt.subplots(figsize=(8, 4.5))
-        ax.bar([i - 0.2 for i in x], [r[1] for r in rows], 0.4, label="t_max prom")
-        ax.bar([i + 0.2 for i in x], [r[2] for r in rows], 0.4, label="t_min prom")
+        ax.bar([i - 0.2 for i in x], [r[1] for r in rows], 0.4, label="avg t_max")
+        ax.bar([i + 0.2 for i in x], [r[2] for r in rows], 0.4, label="avg t_min")
         ax.set_xticks(list(x)); ax.set_xticklabels(cities)
-        ax.set_ylabel("Temperatura (C)"); ax.set_title("Promedios por ciudad (ultimos 7 dias)")
+        ax.set_ylabel("Temperature (C)"); ax.set_title("Per-city averages (last 7 days)")
         ax.legend(); fig.tight_layout(); fig.savefig("grafica_ciudades.png", dpi=100)
 
-        # Grafica 2: evolucion diaria de t_media (lineas)
+        # Chart 2: daily t_media evolution (lines)
         fig, ax = plt.subplots(figsize=(8, 4.5))
         for ciudad in cities:
             pts = list(db.execute("SELECT fecha, t_media FROM observaciones WHERE ciudad=? ORDER BY rowid", (ciudad,)))
             ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", label=ciudad)
-        ax.set_ylabel("t_media (C)"); ax.set_title("Temperatura media diaria")
+        ax.set_ylabel("t_media (C)"); ax.set_title("Daily mean temperature")
         ax.tick_params(axis="x", rotation=45); ax.legend(); fig.tight_layout()
         fig.savefig("grafica_dias.png", dpi=100)
 
-        # Dashboard HTML autocontenido: PNG embebidos en base64 + tabla de agregados
+        # Self-contained HTML dashboard: PNGs embedded in base64 + aggregates table
         png1 = base64.b64encode(open("grafica_ciudades.png", "rb").read()).decode()
         png2 = base64.b64encode(open("grafica_dias.png", "rb").read()).decode()
         tabla = "".join(f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td>"
                         f"<td>{r[4]}</td><td>{r[5]}</td><td>{r[6]}</td></tr>"
                         for r in db.execute("SELECT * FROM agregados"))
         html = f"""<!DOCTYPE html>
-        <html lang="es"><head><meta charset="utf-8">
-        <title>Dashboard ETL Meteorologico</title>
+        <html lang="en"><head><meta charset="utf-8">
+        <title>Weather ETL Dashboard</title>
         <style>
           body {{ font-family: sans-serif; margin: 2rem; background: #f7f7f9; }}
           h1 {{ color: #22313f; }} img {{ max-width: 90%; border: 1px solid #ccc; margin: 1rem 0; }}
           table {{ border-collapse: collapse; background: white; }}
           td, th {{ border: 1px solid #999; padding: 6px 14px; text-align: center; }}
         </style></head><body>
-        <h1>Dashboard ETL Meteorologico</h1>
-        <p>Datos: Open-Meteo (API publica). Generado por el pipeline etl_meteorologico.</p>
+        <h1>Weather ETL Dashboard</h1>
+        <p>Data: Open-Meteo (public API). Generated by the etl_meteorologico pipeline.</p>
         <img src="data:image/png;base64,{png1}">
         <img src="data:image/png;base64,{png2}">
-        <h2>Agregados (desde SQLite)</h2>
+        <h2>Aggregates (from SQLite)</h2>
         <table><tr><th>ciudad</th><th>dias</th><th>avg_t_max</th><th>avg_t_min</th>
         <th>avg_t_media</th><th>total_precip_mm</th><th>max_viento_kmh</th></tr>{tabla}</table>
         </body></html>"""
         open("dashboard.html", "w").write(html)
-        print("Dashboard generado: dashboard.html + 2 PNG")
+        print("Dashboard generated: dashboard.html + 2 PNGs")
 
-        # Grafica ASCII para el log del pipeline (visible con pipectl LOGS)
-        print("\nGrafica ASCII (avg t_media por ciudad):")
+        # ASCII chart for the pipeline log (visible with pipectl LOGS)
+        print("\nASCII chart (avg t_media per city):")
         for r in rows:
             barra = "#" * max(1, int(r[3]))
             print(f"  {r[0]:10s} | {barra} {r[3]} C")
